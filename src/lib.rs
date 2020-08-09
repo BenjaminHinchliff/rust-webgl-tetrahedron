@@ -3,13 +3,11 @@ use wasm_bindgen::prelude::*;
 #[wasm_bindgen(start)]
 pub fn run() -> Result<(), JsValue> {
     let window = web_sys::window().expect("no global `window` exists");
-    let document = window.document().expect("global `window` should have document");
-    let body = document.body().expect("document should have a body");
+    let document = window.document().expect("should have a document on window");
 
-    let val = document.create_element("p")?;
-    val.set_text_content(Some("Hello from rust!"));
+    let title = document.get_element_by_id("title").expect("#title html element should exist");
 
-    body.append_child(&val)?;
+    title.set_text_content(Some("Hello from rust!"));
 
     Ok(())
 }
