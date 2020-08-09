@@ -1,11 +1,15 @@
 use wasm_bindgen::prelude::*;
 
-#[wasm_bindgen]
-extern "C" {
-    fn alert(s: &str);
-}
+#[wasm_bindgen(start)]
+pub fn run() -> Result<(), JsValue> {
+    let window = web_sys::window().expect("no global `window` exists");
+    let document = window.document().expect("global `window` should have document");
+    let body = document.body().expect("document should have a body");
 
-#[wasm_bindgen]
-pub fn greet(name: &str) {
-    alert(&format!("Hello, {}", name))
+    let val = document.create_element("p")?;
+    val.set_text_content(Some("Hello from rust!"));
+
+    body.append_child(&val)?;
+
+    Ok(())
 }
