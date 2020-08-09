@@ -1,2 +1,1 @@
-import('./pkg')
-  .catch(console.error);
+import('./pkg');
