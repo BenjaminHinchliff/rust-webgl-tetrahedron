@@ -1,10 +1,10 @@
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
-use web_sys::console;
 use web_sys::{HtmlCanvasElement, WebGlBuffer, WebGlProgram, WebGlRenderingContext, WebGlShader};
 
+#[allow(unused_macros)]
 macro_rules! console_log {
-    ($($t:tt)*) => (console::log_1(&format_args!($($t)*).to_string().into()))
+    ($($t:tt)*) => (web_sys::console::log_1(&format_args!($($t)*).to_string().into()))
 }
 
 #[wasm_bindgen]
@@ -14,12 +14,15 @@ pub struct Tetra {
     program: Option<WebGlProgram>,
     vert_array: Option<Vec<f32>>,
     vert_buffer: Option<WebGlBuffer>,
+    element_array: Option<Vec<u16>>,
+    element_buffer: Option<WebGlBuffer>,
 }
 
 #[wasm_bindgen]
 impl Tetra {
     #[wasm_bindgen(constructor)]
     pub fn new(canvas: &HtmlCanvasElement) -> Result<Tetra, JsValue> {
+        console_error_panic_hook::set_once();
         let gl = canvas
             .get_context("webgl")
             .expect("invalid web context")
@@ -31,6 +34,8 @@ impl Tetra {
             program: None,
             vert_array: None,
             vert_buffer: None,
+            element_array: None,
+            element_buffer: None,
         })
     }
 
@@ -76,8 +81,36 @@ impl Tetra {
         Ok(self)
     }
 
+    pub fn add_indices(mut self, indices: Vec<u16>) -> Result<Tetra, JsValue> {
+        self.element_array = Some(indices);
+        let buffer = self
+            .gl
+            .create_buffer()
+            .ok_or("failed to create index buffer")?;
+        self.gl
+            .bind_buffer(WebGlRenderingContext::ELEMENT_ARRAY_BUFFER, Some(&buffer));
+
+        unsafe {
+            let element_array = js_sys::Uint16Array::view(self.element_array.as_ref().unwrap());
+
+            self.gl.buffer_data_with_array_buffer_view(
+                WebGlRenderingContext::ELEMENT_ARRAY_BUFFER,
+                &element_array,
+                WebGlRenderingContext::STATIC_DRAW,
+            );
+        }
+
+        self.gl
+            .bind_buffer(WebGlRenderingContext::ELEMENT_ARRAY_BUFFER, None);
+        self.element_buffer = Some(buffer);
+        Ok(self)
+    }
+
     pub fn draw(&mut self) {
-        self.gl.use_program(Some(self.program.as_ref().unwrap()));
+        self.gl.use_program(Some(self.program.as_ref().expect("program has to have been created to draw")));
+        self.vert_buffer.as_ref().expect("vertex buffer must be created to draw");
+        self.vert_array.as_ref().expect("vertex array must be created to draw");
+
         self.gl.bind_buffer(
             WebGlRenderingContext::ARRAY_BUFFER,
             self.vert_buffer.as_ref(),
@@ -90,16 +123,28 @@ impl Tetra {
         self.gl.clear_color(0.0, 0.0, 0.0, 1.0);
         self.gl.clear(WebGlRenderingContext::COLOR_BUFFER_BIT);
 
-        self.gl.draw_arrays(
-            WebGlRenderingContext::TRIANGLES,
-            0,
-            (self
-                .vert_array
-                .as_ref()
-                .expect("vertices must be added")
-                .len()
-                / 3) as i32,
-        );
+        if let (Some(element_buffer), Some(element_array)) =
+            (self.element_buffer.as_ref(), self.element_array.as_ref())
+        {
+            self.gl.bind_buffer(
+                WebGlRenderingContext::ELEMENT_ARRAY_BUFFER,
+                Some(element_buffer),
+            );
+            self.gl.draw_elements_with_i32(
+                WebGlRenderingContext::TRIANGLES,
+                element_array.len() as i32,
+                WebGlRenderingContext::UNSIGNED_SHORT,
+                0,
+            );
+            self.gl
+                .bind_buffer(WebGlRenderingContext::ELEMENT_ARRAY_BUFFER, None);
+        } else if let Some(ref vert_array) = self.vert_array {
+            self.gl.draw_arrays(
+                WebGlRenderingContext::TRIANGLES,
+                0,
+                (vert_array.len() / 3) as i32,
+            );
+        }
 
         self.gl
             .bind_buffer(WebGlRenderingContext::ARRAY_BUFFER, None);

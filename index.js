@@ -17,9 +17,14 @@ async function main() {
       .add_frag_shader(fragSource)
       .link_program()
       .add_vertices([
-        -0.7, -0.7, 0.0, // bottom left
-        0.7, -0.7, 0.0, // bottom right
-        0.0, 0.7, 0.0, // top
+        0.5, 0.5, 0.0, // top right
+        0.5, -0.5, 0.0, // bottom right
+        -0.5, -0.5, 0.0, // bottom left
+        -0.5, 0.5, 0.0, // top left
+      ])
+      .add_indices([
+        0, 1, 3, // first
+        1, 2, 3, // second
       ])
       .draw();
 }
