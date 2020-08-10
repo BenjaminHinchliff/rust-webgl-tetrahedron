@@ -13,23 +13,24 @@ pub struct Tetra {
     shaders: Vec<WebGlShader>,
     program: Option<WebGlProgram>,
     vert_array: Option<Vec<f32>>,
-    array_buffer: Option<WebGlBuffer>,
+    vert_buffer: Option<WebGlBuffer>,
 }
 
 #[wasm_bindgen]
 impl Tetra {
     #[wasm_bindgen(constructor)]
     pub fn new(canvas: &HtmlCanvasElement) -> Result<Tetra, JsValue> {
+        let gl = canvas
+            .get_context("webgl")
+            .expect("invalid web context")
+            .expect("unable to get webgl context from #webgl")
+            .dyn_into::<WebGlRenderingContext>()?;
         Ok(Tetra {
-            gl: canvas
-                .get_context("webgl")
-                .expect("invalid web context")
-                .expect("unable to get webgl context from #webgl")
-                .dyn_into::<WebGlRenderingContext>()?,
+            gl,
             shaders: Vec::new(),
             program: None,
             vert_array: None,
-            array_buffer: None,
+            vert_buffer: None,
         })
     }
 
@@ -71,7 +72,7 @@ impl Tetra {
 
         self.gl
             .bind_buffer(WebGlRenderingContext::ARRAY_BUFFER, None);
-        self.array_buffer = Some(buffer);
+        self.vert_buffer = Some(buffer);
         Ok(self)
     }
 
@@ -79,7 +80,7 @@ impl Tetra {
         self.gl.use_program(Some(self.program.as_ref().unwrap()));
         self.gl.bind_buffer(
             WebGlRenderingContext::ARRAY_BUFFER,
-            self.array_buffer.as_ref(),
+            self.vert_buffer.as_ref(),
         );
 
         self.gl
