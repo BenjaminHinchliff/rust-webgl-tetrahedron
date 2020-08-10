@@ -1,7 +1,7 @@
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
-use web_sys::{HtmlCanvasElement, WebGlBuffer, WebGlProgram, WebGlRenderingContext, WebGlShader};
 use web_sys::console;
+use web_sys::{HtmlCanvasElement, WebGlBuffer, WebGlProgram, WebGlRenderingContext, WebGlShader};
 
 macro_rules! console_log {
     ($($t:tt)*) => (console::log_1(&format_args!($($t)*).to_string().into()))
@@ -77,7 +77,10 @@ impl Tetra {
 
     pub fn draw(&mut self) {
         self.gl.use_program(Some(self.program.as_ref().unwrap()));
-        self.gl.bind_buffer(WebGlRenderingContext::ARRAY_BUFFER, self.array_buffer.as_ref());
+        self.gl.bind_buffer(
+            WebGlRenderingContext::ARRAY_BUFFER,
+            self.array_buffer.as_ref(),
+        );
 
         self.gl
             .vertex_attrib_pointer_with_i32(0, 3, WebGlRenderingContext::FLOAT, false, 0, 0);
@@ -97,7 +100,8 @@ impl Tetra {
                 / 3) as i32,
         );
 
-        self.gl.bind_buffer(WebGlRenderingContext::ARRAY_BUFFER, None);
+        self.gl
+            .bind_buffer(WebGlRenderingContext::ARRAY_BUFFER, None);
         self.gl.use_program(None);
     }
 }
