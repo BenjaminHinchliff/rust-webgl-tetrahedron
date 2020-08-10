@@ -9,6 +9,18 @@ module.exports = {
         path: path.resolve(__dirname, 'dist'),
         filename: 'index.js',
     },
+    module: {
+        rules: [
+            {
+                test: /\.(png|jpe?g|gif|vert|frag)$/i,
+                use: [
+                    {
+                        loader: 'file-loader',
+                    },
+                ],
+            },
+        ],
+    },
     plugins: [
         new HtmlWebpackPlugin({
             template: 'index.ejs',
