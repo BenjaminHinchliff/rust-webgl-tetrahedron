@@ -11,6 +11,11 @@ async function main() {
         .add_vert_shader(vertex_source)
         .add_frag_shader(frag_source)
         .link_program()
+        .add_vertices([
+            -0.7, -0.7, 0.0, // bottom left
+            0.7, -0.7, 0.0, // bottom right
+            0.0, 0.7, 0.0, // top
+        ])
         .draw();
 }
 

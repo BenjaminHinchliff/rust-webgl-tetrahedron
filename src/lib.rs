@@ -1,6 +1,6 @@
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
-use web_sys::{HtmlCanvasElement, WebGlRenderingContext, WebGlShader, WebGlProgram};
+use web_sys::{HtmlCanvasElement, WebGlBuffer, WebGlProgram, WebGlRenderingContext, WebGlShader};
 use web_sys::console;
 
 macro_rules! console_log {
@@ -12,6 +12,8 @@ pub struct Tetra {
     gl: WebGlRenderingContext,
     shaders: Vec<WebGlShader>,
     program: Option<WebGlProgram>,
+    vert_array: Option<Vec<f32>>,
+    array_buffer: Option<WebGlBuffer>,
 }
 
 #[wasm_bindgen]
@@ -19,17 +21,21 @@ impl Tetra {
     #[wasm_bindgen(constructor)]
     pub fn new(canvas: &HtmlCanvasElement) -> Result<Tetra, JsValue> {
         Ok(Tetra {
-            gl: canvas.get_context("webgl")
-            .expect("invalid web context")
-            .expect("unable to get webgl context from #webgl")
-            .dyn_into::<WebGlRenderingContext>()?,
+            gl: canvas
+                .get_context("webgl")
+                .expect("invalid web context")
+                .expect("unable to get webgl context from #webgl")
+                .dyn_into::<WebGlRenderingContext>()?,
             shaders: Vec::new(),
             program: None,
+            vert_array: None,
+            array_buffer: None,
         })
     }
 
     pub fn add_shader(mut self, shader_type: u32, source: &str) -> Result<Tetra, JsValue> {
-        self.shaders.push(compile_shader(&self.gl, shader_type, source)?);
+        self.shaders
+            .push(compile_shader(&self.gl, shader_type, source)?);
         Ok(self)
     }
 
@@ -46,39 +52,53 @@ impl Tetra {
         Ok(self)
     }
 
-    pub fn draw(&mut self) {
-        self.gl.use_program(Some(self.program.as_ref().unwrap()));
+    pub fn add_vertices(mut self, verts: Vec<f32>) -> Result<Tetra, JsValue> {
+        self.vert_array = Some(verts);
 
-        let vertices: [f32; 9] = [
-            -0.7, -0.7, 0.0, // bottom left
-            0.7, -0.7, 0.0, // bottom right
-            0.0, 0.7, 0.0, // top
-        ];
-
-        let buffer = self.gl.create_buffer().ok_or("failed to create buffer").unwrap();
-        self.gl.bind_buffer(WebGlRenderingContext::ARRAY_BUFFER, Some(&buffer));
+        let buffer = self.gl.create_buffer().ok_or("failed to create buffer")?;
+        self.gl
+            .bind_buffer(WebGlRenderingContext::ARRAY_BUFFER, Some(&buffer));
 
         unsafe {
-            let vert_array = js_sys::Float32Array::view(&vertices);
-    
+            let vert_array = js_sys::Float32Array::view(self.vert_array.as_ref().unwrap());
+
             self.gl.buffer_data_with_array_buffer_view(
                 WebGlRenderingContext::ARRAY_BUFFER,
                 &vert_array,
                 WebGlRenderingContext::STATIC_DRAW,
             );
         }
-    
-        self.gl.vertex_attrib_pointer_with_i32(0, 3, WebGlRenderingContext::FLOAT, false, 0, 0);
+
+        self.gl
+            .bind_buffer(WebGlRenderingContext::ARRAY_BUFFER, None);
+        self.array_buffer = Some(buffer);
+        Ok(self)
+    }
+
+    pub fn draw(&mut self) {
+        self.gl.use_program(Some(self.program.as_ref().unwrap()));
+        self.gl.bind_buffer(WebGlRenderingContext::ARRAY_BUFFER, self.array_buffer.as_ref());
+
+        self.gl
+            .vertex_attrib_pointer_with_i32(0, 3, WebGlRenderingContext::FLOAT, false, 0, 0);
         self.gl.enable_vertex_attrib_array(0);
-    
+
         self.gl.clear_color(0.0, 0.0, 0.0, 1.0);
         self.gl.clear(WebGlRenderingContext::COLOR_BUFFER_BIT);
-    
+
         self.gl.draw_arrays(
             WebGlRenderingContext::TRIANGLES,
             0,
-            (vertices.len() / 3) as i32,
+            (self
+                .vert_array
+                .as_ref()
+                .expect("vertices must be added")
+                .len()
+                / 3) as i32,
         );
+
+        self.gl.bind_buffer(WebGlRenderingContext::ARRAY_BUFFER, None);
+        self.gl.use_program(None);
     }
 }
 
