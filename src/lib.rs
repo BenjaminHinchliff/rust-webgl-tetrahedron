@@ -1,6 +1,8 @@
+#![warn(clippy::all)]
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
-use web_sys::{HtmlCanvasElement, WebGlBuffer, WebGlProgram, WebGlRenderingContext, WebGlShader};
+use web_sys::{HtmlCanvasElement, WebGlBuffer, WebGlProgram, WebGlRenderingContext, WebGlShader, WebGlUniformLocation};
+use nalgebra::Matrix4;
 
 #[allow(unused_macros)]
 macro_rules! console_log {
@@ -16,6 +18,9 @@ pub struct Tetra {
     vert_buffer: Option<WebGlBuffer>,
     element_array: Option<Vec<u16>>,
     element_buffer: Option<WebGlBuffer>,
+    model_loc: Option<WebGlUniformLocation>,
+    view_loc: Option<WebGlUniformLocation>,
+    projection_loc: Option<WebGlUniformLocation>,
 }
 
 #[wasm_bindgen]
@@ -36,6 +41,9 @@ impl Tetra {
             vert_buffer: None,
             element_array: None,
             element_buffer: None,
+            model_loc: None,
+            view_loc: None,
+            projection_loc: None,
         })
     }
 
@@ -54,7 +62,11 @@ impl Tetra {
     }
 
     pub fn link_program(mut self) -> Result<Tetra, JsValue> {
-        self.program = Some(link_program(&self.gl, &self.shaders)?);
+        let program = link_program(&self.gl, &self.shaders)?;
+        self.model_loc = self.gl.get_uniform_location(&program, "model");
+        self.view_loc = self.gl.get_uniform_location(&program, "view");
+        self.projection_loc = self.gl.get_uniform_location(&program, "projection");
+        self.program = Some(program);
         Ok(self)
     }
 
@@ -109,7 +121,19 @@ impl Tetra {
     pub fn draw(&mut self) {
         self.gl.use_program(Some(self.program.as_ref().expect("program has to have been created to draw")));
         self.vert_buffer.as_ref().expect("vertex buffer must be created to draw");
-        self.vert_array.as_ref().expect("vertex array must be created to draw");
+        let vert_array = self.vert_array.as_ref().expect("vertex array must be created to draw");
+
+        let model_loc = self.model_loc.as_ref().expect("model matrix uniform must exist on vertex shader");
+        let model: Matrix4<f32> = Matrix4::identity();
+        self.gl.uniform_matrix4fv_with_f32_array(Some(model_loc), false, model.as_slice());
+        
+        let view_loc = self.view_loc.as_ref().expect("view matrix uniform must exist on vertex shader");
+        let view: Matrix4<f32> = Matrix4::identity();
+        self.gl.uniform_matrix4fv_with_f32_array(Some(view_loc), false, view.as_slice());
+        
+        let projection_loc = self.projection_loc.as_ref().expect("projection matrix usiform must exist on vertex shader");
+        let projection: Matrix4<f32> = Matrix4::identity();
+        self.gl.uniform_matrix4fv_with_f32_array(Some(projection_loc), false, projection.as_slice());
 
         self.gl.bind_buffer(
             WebGlRenderingContext::ARRAY_BUFFER,
@@ -138,7 +162,7 @@ impl Tetra {
             );
             self.gl
                 .bind_buffer(WebGlRenderingContext::ELEMENT_ARRAY_BUFFER, None);
-        } else if let Some(ref vert_array) = self.vert_array {
+        } else {
             self.gl.draw_arrays(
                 WebGlRenderingContext::TRIANGLES,
                 0,

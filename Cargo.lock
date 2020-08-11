@@ -121,18 +121,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "nalgebra-glm"
-version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b0689d473f0cbf5d763219dc9faf5d3c3136d20583f533317cc9463f85400ca1"
-dependencies = [
- "approx",
- "nalgebra",
- "num-traits",
- "simba",
-]
-
-[[package]]
 name = "num-complex"
 version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -325,7 +313,7 @@ version = "0.1.0"
 dependencies = [
  "console_error_panic_hook",
  "js-sys",
- "nalgebra-glm",
+ "nalgebra",
  "wasm-bindgen",
  "web-sys",
 ]
