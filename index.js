@@ -1,6 +1,6 @@
 const wasmModulePromise = import('./pkg');
-import vertexPath from './assets/tetra.vert';
-import fragPath from './assets/tetra.frag';
+import vertexPath from './assets/shaders/tetra.vert';
+import fragPath from './assets/shaders/tetra.frag';
 
 /**
  * Main function that handles webgl instantiation and linking with wasm
