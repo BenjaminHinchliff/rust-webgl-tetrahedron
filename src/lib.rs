@@ -5,8 +5,8 @@ use std::rc::Rc;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::{
-    HtmlCanvasElement, HtmlImageElement, WebGlProgram, WebGlRenderingContext,
-    WebGlShader, WebGlTexture, WebGlUniformLocation,
+    HtmlCanvasElement, HtmlImageElement, WebGlProgram, WebGlRenderingContext, WebGlShader,
+    WebGlTexture, WebGlUniformLocation,
 };
 
 mod gl_buffer;

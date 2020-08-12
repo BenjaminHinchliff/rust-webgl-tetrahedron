@@ -1,8 +1,6 @@
 use std::mem;
 use wasm_bindgen::prelude::*;
-use web_sys::{
-    WebGlBuffer, WebGlRenderingContext,
-};
+use web_sys::{WebGlBuffer, WebGlRenderingContext};
 
 use crate::WebGl;
 
