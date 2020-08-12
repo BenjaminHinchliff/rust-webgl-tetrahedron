@@ -1,22 +1,15 @@
 #![warn(clippy::all)]
 use nalgebra as na;
 use std::mem;
-use std::ops::Deref;
 use std::rc::Rc;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::{
-    HtmlCanvasElement, HtmlImageElement, WebGlProgram, WebGlRenderingContext, WebGlShader,
-    WebGlTexture, WebGlUniformLocation,
+    HtmlCanvasElement, HtmlImageElement, WebGlRenderingContext, WebGlTexture, WebGlUniformLocation,
 };
 
 mod gl_abstraction;
 pub use gl_abstraction::{GlBuffer, Program, Shader, WebGl};
-
-#[allow(unused_macros)]
-macro_rules! console_log {
-    ($($t:tt)*) => (web_sys::console::log_1(&format_args!($($t)*).to_string().into()))
-}
 
 #[wasm_bindgen]
 pub struct Tetra {
