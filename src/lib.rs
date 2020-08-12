@@ -67,6 +67,10 @@ impl Tetra {
 
     pub fn link_program(mut self) -> Result<Tetra, JsValue> {
         let program = link_program(&self.gl, &self.shaders)?;
+        for shader in self.shaders.iter() {
+            self.gl.delete_shader(Some(shader));
+        }
+        self.shaders.clear();
         self.mvp_loc = self
             .gl
             .get_uniform_location(&program, "model_view_projection");
@@ -242,6 +246,15 @@ impl Tetra {
         self.gl
             .bind_buffer(WebGlRenderingContext::ARRAY_BUFFER, None);
         self.gl.use_program(None);
+    }
+}
+
+impl Drop for Tetra {
+    fn drop(&mut self) {
+        self.gl.delete_program(self.program.as_ref());
+        self.gl.delete_buffer(self.vert_buffer.as_ref());
+        self.gl.delete_buffer(self.element_buffer.as_ref());
+        self.gl.delete_texture(self.texture.as_ref());
     }
 }
 
