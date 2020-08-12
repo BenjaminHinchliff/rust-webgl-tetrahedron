@@ -2,7 +2,7 @@
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::{HtmlCanvasElement, WebGlBuffer, WebGlProgram, WebGlRenderingContext, WebGlShader, WebGlUniformLocation};
-use nalgebra::Matrix4;
+use nalgebra as na;
 
 #[allow(unused_macros)]
 macro_rules! console_log {
@@ -18,9 +18,7 @@ pub struct Tetra {
     vert_buffer: Option<WebGlBuffer>,
     element_array: Option<Vec<u16>>,
     element_buffer: Option<WebGlBuffer>,
-    model_loc: Option<WebGlUniformLocation>,
-    view_loc: Option<WebGlUniformLocation>,
-    projection_loc: Option<WebGlUniformLocation>,
+    mvp_loc: Option<WebGlUniformLocation>,
 }
 
 #[wasm_bindgen]
@@ -41,9 +39,7 @@ impl Tetra {
             vert_buffer: None,
             element_array: None,
             element_buffer: None,
-            model_loc: None,
-            view_loc: None,
-            projection_loc: None,
+            mvp_loc: None,
         })
     }
 
@@ -63,9 +59,7 @@ impl Tetra {
 
     pub fn link_program(mut self) -> Result<Tetra, JsValue> {
         let program = link_program(&self.gl, &self.shaders)?;
-        self.model_loc = self.gl.get_uniform_location(&program, "model");
-        self.view_loc = self.gl.get_uniform_location(&program, "view");
-        self.projection_loc = self.gl.get_uniform_location(&program, "projection");
+        self.mvp_loc = self.gl.get_uniform_location(&program, "model_view_projection");
         self.program = Some(program);
         Ok(self)
     }
@@ -123,17 +117,14 @@ impl Tetra {
         self.vert_buffer.as_ref().expect("vertex buffer must be created to draw");
         let vert_array = self.vert_array.as_ref().expect("vertex array must be created to draw");
 
-        let model_loc = self.model_loc.as_ref().expect("model matrix uniform must exist on vertex shader");
-        let model: Matrix4<f32> = Matrix4::identity();
-        self.gl.uniform_matrix4fv_with_f32_array(Some(model_loc), false, model.as_slice());
-        
-        let view_loc = self.view_loc.as_ref().expect("view matrix uniform must exist on vertex shader");
-        let view: Matrix4<f32> = Matrix4::identity();
-        self.gl.uniform_matrix4fv_with_f32_array(Some(view_loc), false, view.as_slice());
-        
-        let projection_loc = self.projection_loc.as_ref().expect("projection matrix usiform must exist on vertex shader");
-        let projection: Matrix4<f32> = Matrix4::identity();
-        self.gl.uniform_matrix4fv_with_f32_array(Some(projection_loc), false, projection.as_slice());
+        let model_rot = na::UnitQuaternion::from_scaled_axis(na::Vector3::x() * -std::f32::consts::FRAC_PI_4);
+        let model: na::Isometry3<f32> = na::Isometry3::from_parts(na::Translation3::identity(), model_rot);
+        let view: na::Isometry3<f32> = na::Isometry3::new(na::Vector3::new(0.0, 0.0, -2.0), na::zero());
+        let projection: na::Perspective3<f32> = na::Perspective3::new(800.0 / 600.0, std::f32::consts::FRAC_PI_2, 0.1, 100.0);
+
+        let mvp_loc = self.mvp_loc.as_ref().expect("model view projection matrix must be defined in vertex shader");
+        let mvp = projection.as_matrix() * (view * model).to_homogeneous();
+        self.gl.uniform_matrix4fv_with_f32_array(Some(mvp_loc), false, mvp.as_slice());
 
         self.gl.bind_buffer(
             WebGlRenderingContext::ARRAY_BUFFER,
