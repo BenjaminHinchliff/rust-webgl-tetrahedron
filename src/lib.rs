@@ -2,6 +2,7 @@
 use js_sys::Object;
 use nalgebra as na;
 use std::mem;
+use std::rc::Rc;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::{
@@ -14,15 +15,64 @@ macro_rules! console_log {
     ($($t:tt)*) => (web_sys::console::log_1(&format_args!($($t)*).to_string().into()))
 }
 
+type WebGl = Rc<WebGlRenderingContext>;
+
+pub struct GlBuffer<T> {
+    gl: WebGl,
+    type_: u32,
+    array: Vec<T>,
+    buffer: WebGlBuffer,
+}
+
+impl<T> GlBuffer<T> {
+    pub fn new(gl: &WebGl, type_: u32, array: Vec<T>) -> Result<GlBuffer<T>, JsValue> {
+        let buffer = gl
+            .create_buffer()
+            .ok_or_else(|| "failed to create buffer")?;
+        gl.bind_buffer(type_, Some(&buffer));
+
+        let buffer_array = unsafe {
+            std::slice::from_raw_parts(
+                array.as_ptr() as *const u8,
+                array.len() * mem::size_of::<T>(),
+            )
+        };
+        gl.buffer_data_with_u8_array(
+            type_,
+            buffer_array,
+            WebGlRenderingContext::STATIC_DRAW,
+        );
+
+        gl.bind_buffer(type_, None);
+        Ok(GlBuffer { gl: gl.clone(), type_, array, buffer })
+    }
+
+    pub fn bind(&self) {
+        self.gl.bind_buffer(self.type_, Some(&self.buffer));
+    }
+
+    pub fn unbind(&self) {
+        self.gl.bind_buffer(self.type_, None);
+    }
+
+    pub fn array(&self) -> &Vec<T> {
+        &self.array
+    }
+}
+
+impl<T> Drop for GlBuffer<T> {
+    fn drop(&mut self) {
+        self.gl.delete_buffer(Some(&self.buffer));
+    }
+}
+
 #[wasm_bindgen]
 pub struct Tetra {
-    gl: WebGlRenderingContext,
+    gl: WebGl,
     shaders: Vec<WebGlShader>,
     program: Option<WebGlProgram>,
-    vert_array: Option<Vec<f32>>,
-    vert_buffer: Option<WebGlBuffer>,
-    element_array: Option<Vec<u16>>,
-    element_buffer: Option<WebGlBuffer>,
+    vert_buffer: Option<GlBuffer<f32>>,
+    element_buffer: Option<GlBuffer<u16>>,
     mvp_loc: Option<WebGlUniformLocation>,
     texture: Option<WebGlTexture>,
 }
@@ -39,12 +89,10 @@ impl Tetra {
             .dyn_into::<WebGlRenderingContext>()?;
         gl.viewport(0, 0, 640, 480);
         Ok(Tetra {
-            gl,
+            gl: Rc::new(gl),
             shaders: Vec::new(),
             program: None,
-            vert_array: None,
             vert_buffer: None,
-            element_array: None,
             element_buffer: None,
             mvp_loc: None,
             texture: None,
@@ -79,50 +127,12 @@ impl Tetra {
     }
 
     pub fn add_vertices(mut self, verts: Vec<f32>) -> Result<Tetra, JsValue> {
-        self.vert_array = Some(verts);
-
-        let buffer = self.gl.create_buffer().ok_or("failed to create buffer")?;
-        self.gl
-            .bind_buffer(WebGlRenderingContext::ARRAY_BUFFER, Some(&buffer));
-
-        unsafe {
-            let vert_array = js_sys::Float32Array::view(self.vert_array.as_ref().unwrap());
-
-            self.gl.buffer_data_with_array_buffer_view(
-                WebGlRenderingContext::ARRAY_BUFFER,
-                &vert_array,
-                WebGlRenderingContext::STATIC_DRAW,
-            );
-        }
-
-        self.gl
-            .bind_buffer(WebGlRenderingContext::ARRAY_BUFFER, None);
-        self.vert_buffer = Some(buffer);
+        self.vert_buffer = Some(GlBuffer::new(&self.gl, WebGlRenderingContext::ARRAY_BUFFER, verts)?);
         Ok(self)
     }
 
     pub fn add_indices(mut self, indices: Vec<u16>) -> Result<Tetra, JsValue> {
-        self.element_array = Some(indices);
-        let buffer = self
-            .gl
-            .create_buffer()
-            .ok_or("failed to create index buffer")?;
-        self.gl
-            .bind_buffer(WebGlRenderingContext::ELEMENT_ARRAY_BUFFER, Some(&buffer));
-
-        unsafe {
-            let element_array = js_sys::Uint16Array::view(self.element_array.as_ref().unwrap());
-
-            self.gl.buffer_data_with_array_buffer_view(
-                WebGlRenderingContext::ELEMENT_ARRAY_BUFFER,
-                &element_array,
-                WebGlRenderingContext::STATIC_DRAW,
-            );
-        }
-
-        self.gl
-            .bind_buffer(WebGlRenderingContext::ELEMENT_ARRAY_BUFFER, None);
-        self.element_buffer = Some(buffer);
+        self.element_buffer = Some(GlBuffer::new(&self.gl, WebGlRenderingContext::ELEMENT_ARRAY_BUFFER, indices)?);
         Ok(self)
     }
 
@@ -167,13 +177,9 @@ impl Tetra {
                     .expect("texture must have been set to draw"),
             ),
         );
-        self.vert_buffer
+        let vert_buffer = self.vert_buffer
             .as_ref()
             .expect("vertex buffer must be created to draw");
-        let vert_array = self
-            .vert_array
-            .as_ref()
-            .expect("vertex array must be created to draw");
 
         let model_rot =
             na::UnitQuaternion::from_scaled_axis(na::Vector3::x() * -std::f32::consts::FRAC_PI_4);
@@ -192,10 +198,7 @@ impl Tetra {
         self.gl
             .uniform_matrix4fv_with_f32_array(Some(mvp_loc), false, mvp.as_slice());
 
-        self.gl.bind_buffer(
-            WebGlRenderingContext::ARRAY_BUFFER,
-            self.vert_buffer.as_ref(),
-        );
+        vert_buffer.bind();
 
         self.gl.vertex_attrib_pointer_with_i32(
             0,
@@ -220,31 +223,26 @@ impl Tetra {
         self.gl.clear_color(0.0, 0.0, 0.0, 1.0);
         self.gl.clear(WebGlRenderingContext::COLOR_BUFFER_BIT);
 
-        if let (Some(element_buffer), Some(element_array)) =
-            (self.element_buffer.as_ref(), self.element_array.as_ref())
+        if let Some(ref element_buffer) = self.element_buffer
         {
-            self.gl.bind_buffer(
-                WebGlRenderingContext::ELEMENT_ARRAY_BUFFER,
-                Some(element_buffer),
-            );
+            element_buffer.bind();
             self.gl.draw_elements_with_i32(
                 WebGlRenderingContext::TRIANGLES,
-                element_array.len() as i32,
+                element_buffer.array().len() as i32,
                 WebGlRenderingContext::UNSIGNED_SHORT,
                 0,
             );
-            self.gl
-                .bind_buffer(WebGlRenderingContext::ELEMENT_ARRAY_BUFFER, None);
+            element_buffer.unbind();
         } else {
             self.gl.draw_arrays(
                 WebGlRenderingContext::TRIANGLES,
                 0,
-                (vert_array.len() / 3) as i32,
+                (vert_buffer.array().len() / 3) as i32,
             );
         }
 
-        self.gl
-            .bind_buffer(WebGlRenderingContext::ARRAY_BUFFER, None);
+
+        vert_buffer.unbind();
         self.gl.use_program(None);
     }
 }
@@ -252,8 +250,6 @@ impl Tetra {
 impl Drop for Tetra {
     fn drop(&mut self) {
         self.gl.delete_program(self.program.as_ref());
-        self.gl.delete_buffer(self.vert_buffer.as_ref());
-        self.gl.delete_buffer(self.element_buffer.as_ref());
         self.gl.delete_texture(self.texture.as_ref());
     }
 }

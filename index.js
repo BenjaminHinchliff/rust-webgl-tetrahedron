@@ -20,7 +20,7 @@ async function main() {
     };
     image.src = imgPath;
   });
-  new Tetra(document.getElementById('webgl'))
+  const tetra = new Tetra(document.getElementById('webgl'))
       .add_vert_shader(vertexSource)
       .add_frag_shader(fragSource)
       .link_program()
@@ -34,8 +34,9 @@ async function main() {
       .add_indices([
         0, 1, 3, // first
         1, 2, 3, // second
-      ])
-      .draw();
+      ]);
+  tetra.draw();
+  tetra.free();
 }
 
 main();
