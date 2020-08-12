@@ -1,5 +1,5 @@
 [package]
-name = "wasm"
+name = "rust-webgl-tetrahedron"
 version = "0.1.0"
 authors = ["Benjamin Hinchliff <benjamin.hinchliff@gmail.com>"]
 edition = "2018"
