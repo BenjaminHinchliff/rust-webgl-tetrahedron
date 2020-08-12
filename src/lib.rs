@@ -1,8 +1,8 @@
 #![warn(clippy::all)]
 use nalgebra as na;
 use std::mem;
-use std::rc::Rc;
 use std::ops::Deref;
+use std::rc::Rc;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::{
@@ -10,71 +10,12 @@ use web_sys::{
     WebGlTexture, WebGlUniformLocation,
 };
 
-mod gl_buffer;
-pub use gl_buffer::GlBuffer;
+mod gl_abstraction;
+pub use gl_abstraction::{GlBuffer, Program, Shader, WebGl};
 
 #[allow(unused_macros)]
 macro_rules! console_log {
     ($($t:tt)*) => (web_sys::console::log_1(&format_args!($($t)*).to_string().into()))
-}
-
-/// a type alias for a reference counted webgl rendering context that can be passed into other
-/// structs and functions
-pub type WebGl = Rc<WebGlRenderingContext>;
-
-pub struct Shader {
-    gl: WebGl,
-    shader: WebGlShader,
-}
-
-impl Shader {
-    pub fn new(gl: &WebGl, type_: u32, source: &str) -> Result<Shader, JsValue> {
-        let shader = compile_shader(gl, type_, source)?;
-        Ok(Shader {
-            gl: gl.clone(),
-            shader,
-        })
-    }
-}
-
-impl Deref for Shader {
-    type Target = WebGlShader;
-
-    fn deref(&self) -> &Self::Target {
-        &self.shader
-    }
-}
-
-impl Drop for Shader {
-    fn drop(&mut self) {
-        self.gl.delete_shader(Some(&self.shader));
-    }
-}
-
-pub struct Program {
-    gl: WebGl,
-    program: WebGlProgram,
-}
-
-impl Program {
-    pub fn new(gl: &WebGl, shaders: &[Shader]) -> Result<Program, JsValue> {
-        let program = link_program(gl, shaders)?;
-        Ok(Program { gl: gl.clone(), program })
-    }
-}
-
-impl Deref for Program {
-    type Target = WebGlProgram;
-
-    fn deref(&self) -> &Self::Target {
-        &self.program
-    }
-}
-
-impl Drop for Program {
-    fn drop(&mut self) {
-        self.gl.delete_program(Some(&self.program));
-    }
 }
 
 #[wasm_bindgen]
@@ -114,7 +55,8 @@ impl Tetra {
     }
 
     pub fn add_shader(mut self, shader_type: u32, source: &str) -> Result<Tetra, JsValue> {
-        self.shaders.push(Shader::new(&self.gl, shader_type, source)?);
+        self.shaders
+            .push(Shader::new(&self.gl, shader_type, source)?);
         Ok(self)
     }
 
@@ -181,11 +123,12 @@ impl Tetra {
     }
 
     pub fn draw(&mut self) {
-        self.gl.use_program(Some(
-            self.program
-                .as_ref()
-                .expect("program has to have been created to draw"),
-        ));
+        let program = self
+            .program
+            .as_ref()
+            .expect("program has to have been created to draw");
+        program.set_used();
+
         self.gl.bind_texture(
             WebGlRenderingContext::TEXTURE_2D,
             Some(
@@ -207,8 +150,12 @@ impl Tetra {
         let view: na::Isometry3<f32> =
             na::Isometry3::new(na::Vector3::new(0.0, 0.0, -4.0), na::zero());
         let (width, height) = self.viewport_size;
-        let projection: na::Perspective3<f32> =
-            na::Perspective3::new(width as f32 / height as f32, std::f32::consts::FRAC_PI_4, 0.1, 100.0);
+        let projection: na::Perspective3<f32> = na::Perspective3::new(
+            width as f32 / height as f32,
+            std::f32::consts::FRAC_PI_4,
+            0.1,
+            100.0,
+        );
 
         let mvp_loc = self
             .mvp_loc
@@ -261,62 +208,12 @@ impl Tetra {
         }
 
         vert_buffer.unbind();
-        self.gl.use_program(None);
+        program.set_unused();
     }
 }
 
 impl Drop for Tetra {
     fn drop(&mut self) {
         self.gl.delete_texture(self.texture.as_ref());
-    }
-}
-
-fn compile_shader(
-    gl: &WebGlRenderingContext,
-    shader_type: u32,
-    source: &str,
-) -> Result<WebGlShader, String> {
-    let shader = gl
-        .create_shader(shader_type)
-        .ok_or_else(|| String::from("Unable to create shader"))?;
-    gl.shader_source(&shader, source);
-    gl.compile_shader(&shader);
-
-    if gl
-        .get_shader_parameter(&shader, WebGlRenderingContext::COMPILE_STATUS)
-        .as_bool()
-        .unwrap_or(false)
-    {
-        Ok(shader)
-    } else {
-        Err(gl
-            .get_shader_info_log(&shader)
-            .unwrap_or_else(|| String::from("unknown error creating shader")))
-    }
-}
-
-fn link_program(
-    gl: &WebGlRenderingContext,
-    shaders: &[Shader],
-) -> Result<WebGlProgram, String> {
-    let program = gl
-        .create_program()
-        .ok_or_else(|| String::from("Unable to create shader object"))?;
-
-    for shader in shaders {
-        gl.attach_shader(&program, shader);
-    }
-    gl.link_program(&program);
-
-    if gl
-        .get_program_parameter(&program, WebGlRenderingContext::LINK_STATUS)
-        .as_bool()
-        .unwrap_or(false)
-    {
-        Ok(program)
-    } else {
-        Err(gl
-            .get_program_info_log(&program)
-            .unwrap_or_else(|| String::from("Unknown error creating program object")))
     }
 }

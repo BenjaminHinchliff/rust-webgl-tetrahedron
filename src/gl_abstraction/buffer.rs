@@ -2,7 +2,7 @@ use std::mem;
 use wasm_bindgen::prelude::*;
 use web_sys::{WebGlBuffer, WebGlRenderingContext};
 
-use crate::WebGl;
+use super::WebGl;
 
 /// a generic type for an opengl buffer that contains both the buffer itself and also owns the
 /// array to the underlying data. Currently the array is immutable so the buffer can't be
