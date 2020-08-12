@@ -37,14 +37,15 @@ impl<T> GlBuffer<T> {
                 array.len() * mem::size_of::<T>(),
             )
         };
-        gl.buffer_data_with_u8_array(
-            type_,
-            buffer_array,
-            WebGlRenderingContext::STATIC_DRAW,
-        );
+        gl.buffer_data_with_u8_array(type_, buffer_array, WebGlRenderingContext::STATIC_DRAW);
 
         gl.bind_buffer(type_, None);
-        Ok(GlBuffer { gl: gl.clone(), type_, array, buffer })
+        Ok(GlBuffer {
+            gl: gl.clone(),
+            type_,
+            array,
+            buffer,
+        })
     }
 
     pub fn bind(&self) {
@@ -127,12 +128,20 @@ impl Tetra {
     }
 
     pub fn add_vertices(mut self, verts: Vec<f32>) -> Result<Tetra, JsValue> {
-        self.vert_buffer = Some(GlBuffer::new(&self.gl, WebGlRenderingContext::ARRAY_BUFFER, verts)?);
+        self.vert_buffer = Some(GlBuffer::new(
+            &self.gl,
+            WebGlRenderingContext::ARRAY_BUFFER,
+            verts,
+        )?);
         Ok(self)
     }
 
     pub fn add_indices(mut self, indices: Vec<u16>) -> Result<Tetra, JsValue> {
-        self.element_buffer = Some(GlBuffer::new(&self.gl, WebGlRenderingContext::ELEMENT_ARRAY_BUFFER, indices)?);
+        self.element_buffer = Some(GlBuffer::new(
+            &self.gl,
+            WebGlRenderingContext::ELEMENT_ARRAY_BUFFER,
+            indices,
+        )?);
         Ok(self)
     }
 
@@ -177,7 +186,8 @@ impl Tetra {
                     .expect("texture must have been set to draw"),
             ),
         );
-        let vert_buffer = self.vert_buffer
+        let vert_buffer = self
+            .vert_buffer
             .as_ref()
             .expect("vertex buffer must be created to draw");
 
@@ -223,8 +233,7 @@ impl Tetra {
         self.gl.clear_color(0.0, 0.0, 0.0, 1.0);
         self.gl.clear(WebGlRenderingContext::COLOR_BUFFER_BIT);
 
-        if let Some(ref element_buffer) = self.element_buffer
-        {
+        if let Some(ref element_buffer) = self.element_buffer {
             element_buffer.bind();
             self.gl.draw_elements_with_i32(
                 WebGlRenderingContext::TRIANGLES,
@@ -240,7 +249,6 @@ impl Tetra {
                 (vert_buffer.array().len() / 3) as i32,
             );
         }
-
 
         vert_buffer.unbind();
         self.gl.use_program(None);
