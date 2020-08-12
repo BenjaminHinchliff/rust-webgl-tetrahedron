@@ -4,10 +4,9 @@ use web_sys::{WebGlBuffer, WebGlRenderingContext};
 
 use crate::WebGl;
 
-/// a generic type for an opengl buffer that contains both the buffer itself
-/// and also owns the array to the underlying data. Currently the array is
-/// immutable so the buffer isn't invalidated, but this could be changed with
-/// an appropriate setter
+/// a generic type for an opengl buffer that contains both the buffer itself and also owns the
+/// array to the underlying data. Currently the array is immutable so the buffer can't be 
+/// invalidated, but this could be changed with an appropriate setter
 pub struct GlBuffer<T> {
     gl: WebGl,
     type_: u32,
@@ -19,7 +18,8 @@ impl<T> GlBuffer<T> {
     /// create a new buffer with usage type of STATIC_DRAW
     /// # Arguments
     /// * `gl` - a reference counted pointer to the webgl context that should be linked to
-    /// * `type_`  - an enum that denotes the type of the buffer e.g. ARRAY_BUFFER or ELEMENT_ARRAY_BUFFER
+    /// * `type_`  - an enum that denotes the type of the buffer e.g. ARRAY_BUFFER or
+    /// ELEMENT_ARRAY_BUFFER
     /// * `array` - a vector to the data to be stored in the buffer
     pub fn new(gl: &WebGl, type_: u32, array: Vec<T>) -> Result<GlBuffer<T>, JsValue> {
         let buffer = gl

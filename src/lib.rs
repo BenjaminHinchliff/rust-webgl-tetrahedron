@@ -10,14 +10,16 @@ use web_sys::{
 };
 
 mod gl_buffer;
-use gl_buffer::GlBuffer;
+pub use gl_buffer::GlBuffer;
 
 #[allow(unused_macros)]
 macro_rules! console_log {
     ($($t:tt)*) => (web_sys::console::log_1(&format_args!($($t)*).to_string().into()))
 }
 
-type WebGl = Rc<WebGlRenderingContext>;
+/// a type alias for a reference counted webgl rendering context that can be passed into other
+/// structs and functions
+pub type WebGl = Rc<WebGlRenderingContext>;
 
 #[wasm_bindgen]
 pub struct Tetra {
