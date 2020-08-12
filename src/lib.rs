@@ -1,8 +1,13 @@
 #![warn(clippy::all)]
+use js_sys::Object;
+use nalgebra as na;
+use std::mem;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
-use web_sys::{HtmlCanvasElement, WebGlBuffer, WebGlProgram, WebGlRenderingContext, WebGlShader, WebGlUniformLocation};
-use nalgebra as na;
+use web_sys::{
+    HtmlCanvasElement, HtmlImageElement, WebGlBuffer, WebGlProgram, WebGlRenderingContext,
+    WebGlShader, WebGlTexture, WebGlUniformLocation,
+};
 
 #[allow(unused_macros)]
 macro_rules! console_log {
@@ -19,6 +24,7 @@ pub struct Tetra {
     element_array: Option<Vec<u16>>,
     element_buffer: Option<WebGlBuffer>,
     mvp_loc: Option<WebGlUniformLocation>,
+    texture: Option<WebGlTexture>,
 }
 
 #[wasm_bindgen]
@@ -31,6 +37,7 @@ impl Tetra {
             .expect("invalid web context")
             .expect("unable to get webgl context from #webgl")
             .dyn_into::<WebGlRenderingContext>()?;
+        gl.viewport(0, 0, 640, 480);
         Ok(Tetra {
             gl,
             shaders: Vec::new(),
@@ -40,6 +47,7 @@ impl Tetra {
             element_array: None,
             element_buffer: None,
             mvp_loc: None,
+            texture: None,
         })
     }
 
@@ -59,7 +67,9 @@ impl Tetra {
 
     pub fn link_program(mut self) -> Result<Tetra, JsValue> {
         let program = link_program(&self.gl, &self.shaders)?;
-        self.mvp_loc = self.gl.get_uniform_location(&program, "model_view_projection");
+        self.mvp_loc = self
+            .gl
+            .get_uniform_location(&program, "model_view_projection");
         self.program = Some(program);
         Ok(self)
     }
@@ -112,28 +122,96 @@ impl Tetra {
         Ok(self)
     }
 
+    pub fn set_texture(mut self, data: HtmlImageElement) -> Result<Tetra, JsValue> {
+        let texture = self
+            .gl
+            .create_texture()
+            .ok_or_else(|| "unable to create texture")?;
+        self.gl
+            .bind_texture(WebGlRenderingContext::TEXTURE_2D, Some(&texture));
+
+        self.gl.tex_image_2d_with_u32_and_u32_and_image(
+            WebGlRenderingContext::TEXTURE_2D,
+            0,
+            WebGlRenderingContext::RGBA as i32,
+            WebGlRenderingContext::RGBA,
+            WebGlRenderingContext::UNSIGNED_BYTE,
+            &data,
+        )?;
+
+        self.gl.generate_mipmap(WebGlRenderingContext::TEXTURE_2D);
+
+        self.gl
+            .bind_texture(WebGlRenderingContext::TEXTURE_2D, None);
+
+        self.texture = Some(texture);
+        Ok(self)
+    }
+
     pub fn draw(&mut self) {
-        self.gl.use_program(Some(self.program.as_ref().expect("program has to have been created to draw")));
-        self.vert_buffer.as_ref().expect("vertex buffer must be created to draw");
-        let vert_array = self.vert_array.as_ref().expect("vertex array must be created to draw");
+        self.gl.use_program(Some(
+            self.program
+                .as_ref()
+                .expect("program has to have been created to draw"),
+        ));
+        self.gl.bind_texture(
+            WebGlRenderingContext::TEXTURE_2D,
+            Some(
+                &self
+                    .texture
+                    .as_ref()
+                    .expect("texture must have been set to draw"),
+            ),
+        );
+        self.vert_buffer
+            .as_ref()
+            .expect("vertex buffer must be created to draw");
+        let vert_array = self
+            .vert_array
+            .as_ref()
+            .expect("vertex array must be created to draw");
 
-        let model_rot = na::UnitQuaternion::from_scaled_axis(na::Vector3::x() * -std::f32::consts::FRAC_PI_4);
-        let model: na::Isometry3<f32> = na::Isometry3::from_parts(na::Translation3::identity(), model_rot);
-        let view: na::Isometry3<f32> = na::Isometry3::new(na::Vector3::new(0.0, 0.0, -2.0), na::zero());
-        let projection: na::Perspective3<f32> = na::Perspective3::new(800.0 / 600.0, std::f32::consts::FRAC_PI_2, 0.1, 100.0);
+        let model_rot =
+            na::UnitQuaternion::from_scaled_axis(na::Vector3::x() * -std::f32::consts::FRAC_PI_4);
+        let model: na::Isometry3<f32> =
+            na::Isometry3::from_parts(na::Translation3::identity(), model_rot);
+        let view: na::Isometry3<f32> =
+            na::Isometry3::new(na::Vector3::new(0.0, 0.0, -2.0), na::zero());
+        let projection: na::Perspective3<f32> =
+            na::Perspective3::new(800.0 / 600.0, std::f32::consts::FRAC_PI_2, 0.1, 100.0);
 
-        let mvp_loc = self.mvp_loc.as_ref().expect("model view projection matrix must be defined in vertex shader");
+        let mvp_loc = self
+            .mvp_loc
+            .as_ref()
+            .expect("model view projection matrix must be defined in vertex shader");
         let mvp = projection.as_matrix() * (view * model).to_homogeneous();
-        self.gl.uniform_matrix4fv_with_f32_array(Some(mvp_loc), false, mvp.as_slice());
+        self.gl
+            .uniform_matrix4fv_with_f32_array(Some(mvp_loc), false, mvp.as_slice());
 
         self.gl.bind_buffer(
             WebGlRenderingContext::ARRAY_BUFFER,
             self.vert_buffer.as_ref(),
         );
 
-        self.gl
-            .vertex_attrib_pointer_with_i32(0, 3, WebGlRenderingContext::FLOAT, false, 0, 0);
+        self.gl.vertex_attrib_pointer_with_i32(
+            0,
+            3,
+            WebGlRenderingContext::FLOAT,
+            false,
+            5 * mem::size_of::<f32>() as i32,
+            0,
+        );
         self.gl.enable_vertex_attrib_array(0);
+
+        self.gl.vertex_attrib_pointer_with_i32(
+            1,
+            2,
+            WebGlRenderingContext::FLOAT,
+            false,
+            5 * mem::size_of::<f32>() as i32,
+            3 * mem::size_of::<f32>() as i32,
+        );
+        self.gl.enable_vertex_attrib_array(1);
 
         self.gl.clear_color(0.0, 0.0, 0.0, 1.0);
         self.gl.clear(WebGlRenderingContext::COLOR_BUFFER_BIT);

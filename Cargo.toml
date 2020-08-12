@@ -24,6 +24,8 @@ features = [
   "WebGlProgram",
   "WebGlShader",
   "WebGlUniformLocation",
+  "HtmlImageElement",
+  "WebGlTexture",
   "Window",
-  "console"
+  "console",
 ]
