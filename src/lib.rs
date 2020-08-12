@@ -2,6 +2,7 @@
 use nalgebra as na;
 use std::mem;
 use std::rc::Rc;
+use std::ops::Deref;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::{
@@ -21,11 +22,67 @@ macro_rules! console_log {
 /// structs and functions
 pub type WebGl = Rc<WebGlRenderingContext>;
 
+pub struct Shader {
+    gl: WebGl,
+    shader: WebGlShader,
+}
+
+impl Shader {
+    pub fn new(gl: &WebGl, type_: u32, source: &str) -> Result<Shader, JsValue> {
+        let shader = compile_shader(gl, type_, source)?;
+        Ok(Shader {
+            gl: gl.clone(),
+            shader,
+        })
+    }
+}
+
+impl Deref for Shader {
+    type Target = WebGlShader;
+
+    fn deref(&self) -> &Self::Target {
+        &self.shader
+    }
+}
+
+impl Drop for Shader {
+    fn drop(&mut self) {
+        self.gl.delete_shader(Some(&self.shader));
+    }
+}
+
+pub struct Program {
+    gl: WebGl,
+    program: WebGlProgram,
+}
+
+impl Program {
+    pub fn new(gl: &WebGl, shaders: &[Shader]) -> Result<Program, JsValue> {
+        let program = link_program(gl, shaders)?;
+        Ok(Program { gl: gl.clone(), program })
+    }
+}
+
+impl Deref for Program {
+    type Target = WebGlProgram;
+
+    fn deref(&self) -> &Self::Target {
+        &self.program
+    }
+}
+
+impl Drop for Program {
+    fn drop(&mut self) {
+        self.gl.delete_program(Some(&self.program));
+    }
+}
+
 #[wasm_bindgen]
 pub struct Tetra {
     gl: WebGl,
-    shaders: Vec<WebGlShader>,
-    program: Option<WebGlProgram>,
+    viewport_size: (u32, u32),
+    shaders: Vec<Shader>,
+    program: Option<Program>,
     vert_buffer: Option<GlBuffer<f32>>,
     element_buffer: Option<GlBuffer<u16>>,
     mvp_loc: Option<WebGlUniformLocation>,
@@ -42,9 +99,11 @@ impl Tetra {
             .expect("invalid web context")
             .expect("unable to get webgl context from #webgl")
             .dyn_into::<WebGlRenderingContext>()?;
-        gl.viewport(0, 0, 640, 480);
+        let (width, height) = (canvas.width(), canvas.height());
+        gl.viewport(0, 0, width as i32, height as i32);
         Ok(Tetra {
             gl: Rc::new(gl),
+            viewport_size: (width, height),
             shaders: Vec::new(),
             program: None,
             vert_buffer: None,
@@ -55,8 +114,7 @@ impl Tetra {
     }
 
     pub fn add_shader(mut self, shader_type: u32, source: &str) -> Result<Tetra, JsValue> {
-        self.shaders
-            .push(compile_shader(&self.gl, shader_type, source)?);
+        self.shaders.push(Shader::new(&self.gl, shader_type, source)?);
         Ok(self)
     }
 
@@ -69,10 +127,7 @@ impl Tetra {
     }
 
     pub fn link_program(mut self) -> Result<Tetra, JsValue> {
-        let program = link_program(&self.gl, &self.shaders)?;
-        for shader in self.shaders.iter() {
-            self.gl.delete_shader(Some(shader));
-        }
+        let program = Program::new(&self.gl, &self.shaders)?;
         self.shaders.clear();
         self.mvp_loc = self
             .gl
@@ -150,9 +205,10 @@ impl Tetra {
         let model: na::Isometry3<f32> =
             na::Isometry3::from_parts(na::Translation3::identity(), model_rot);
         let view: na::Isometry3<f32> =
-            na::Isometry3::new(na::Vector3::new(0.0, 0.0, -2.0), na::zero());
+            na::Isometry3::new(na::Vector3::new(0.0, 0.0, -4.0), na::zero());
+        let (width, height) = self.viewport_size;
         let projection: na::Perspective3<f32> =
-            na::Perspective3::new(800.0 / 600.0, std::f32::consts::FRAC_PI_2, 0.1, 100.0);
+            na::Perspective3::new(width as f32 / height as f32, std::f32::consts::FRAC_PI_4, 0.1, 100.0);
 
         let mvp_loc = self
             .mvp_loc
@@ -211,7 +267,6 @@ impl Tetra {
 
 impl Drop for Tetra {
     fn drop(&mut self) {
-        self.gl.delete_program(self.program.as_ref());
         self.gl.delete_texture(self.texture.as_ref());
     }
 }
@@ -242,7 +297,7 @@ fn compile_shader(
 
 fn link_program(
     gl: &WebGlRenderingContext,
-    shaders: &[WebGlShader],
+    shaders: &[Shader],
 ) -> Result<WebGlProgram, String> {
     let program = gl
         .create_program()
