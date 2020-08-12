@@ -4,19 +4,24 @@ import fragPath from './assets/shaders/tetra.frag';
 import imgPath from './assets/img/cubetexture.png';
 
 /**
- * Main function that handles webgl instantiation and linking with wasm
+ * Main function that handles webgl instantiation and fetching of resources
  */
 async function main() {
   const wasmModule = await wasmModulePromise;
   const {Tetra} = wasmModule;
+  // get shader sources
   const [vertexSource, fragSource] = await Promise.all(
       [vertexPath, fragPath].map(async (path) => {
         return await (await fetch(path)).text();
       }));
+  // get texture image
   const img = await new Promise((resolve, reject) => {
     const image = new Image();
     image.onload = () => {
       resolve(image);
+    };
+    image.onerror = (err) => {
+      reject(err);
     };
     image.src = imgPath;
   });
