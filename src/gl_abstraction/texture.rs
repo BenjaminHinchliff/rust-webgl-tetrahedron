@@ -1,5 +1,5 @@
 use wasm_bindgen::JsValue;
-use web_sys::{HtmlImageElement, WebGlRenderingContext, WebGlTexture};
+use web_sys::{ImageData, WebGlRenderingContext as WebGlCtx, WebGlTexture};
 
 use super::WebGl;
 
@@ -9,24 +9,42 @@ pub struct Texture2D {
 }
 
 impl Texture2D {
-    pub fn new(gl: &WebGl, image: &HtmlImageElement) -> Result<Texture2D, JsValue> {
+    pub fn new(gl: &WebGl, image: &ImageData) -> Result<Texture2D, JsValue> {
         let texture = gl
             .create_texture()
             .ok_or_else(|| "unable to create texture")?;
-        gl.bind_texture(WebGlRenderingContext::TEXTURE_2D, Some(&texture));
+        gl.bind_texture(WebGlCtx::TEXTURE_2D, Some(&texture));
 
-        gl.tex_image_2d_with_u32_and_u32_and_image(
-            WebGlRenderingContext::TEXTURE_2D,
+        gl.tex_image_2d_with_u32_and_u32_and_image_data(
+            WebGlCtx::TEXTURE_2D,
             0,
-            WebGlRenderingContext::RGBA as i32,
-            WebGlRenderingContext::RGBA,
-            WebGlRenderingContext::UNSIGNED_BYTE,
+            WebGlCtx::RGBA as i32,
+            WebGlCtx::RGBA,
+            WebGlCtx::UNSIGNED_BYTE,
             image,
         )?;
 
-        gl.generate_mipmap(WebGlRenderingContext::TEXTURE_2D);
+        if is_power_of_2(image.width()) && is_power_of_2(image.height()) {
+            gl.generate_mipmap(WebGlCtx::TEXTURE_2D);
+        } else {
+            gl.tex_parameteri(
+                WebGlCtx::TEXTURE_2D,
+                WebGlCtx::TEXTURE_WRAP_S,
+                WebGlCtx::CLAMP_TO_EDGE as i32,
+            );
+            gl.tex_parameteri(
+                WebGlCtx::TEXTURE_2D,
+                WebGlCtx::TEXTURE_WRAP_T,
+                WebGlCtx::CLAMP_TO_EDGE as i32,
+            );
+            gl.tex_parameteri(
+                WebGlCtx::TEXTURE_2D,
+                WebGlCtx::TEXTURE_MIN_FILTER,
+                WebGlCtx::LINEAR as i32,
+            );
+        }
 
-        gl.bind_texture(WebGlRenderingContext::TEXTURE_2D, None);
+        gl.bind_texture(WebGlCtx::TEXTURE_2D, None);
 
         Ok(Texture2D {
             gl: gl.clone(),
@@ -36,11 +54,14 @@ impl Texture2D {
 
     pub fn bind(&self) {
         self.gl
-            .bind_texture(WebGlRenderingContext::TEXTURE_2D, Some(&self.texture));
+            .bind_texture(WebGlCtx::TEXTURE_2D, Some(&self.texture));
     }
 
     pub fn unbind(&self) {
-        self.gl
-            .bind_texture(WebGlRenderingContext::TEXTURE_2D, None);
+        self.gl.bind_texture(WebGlCtx::TEXTURE_2D, None);
     }
+}
+
+fn is_power_of_2(value: u32) -> bool {
+    (value & (value - 1)) == 0
 }

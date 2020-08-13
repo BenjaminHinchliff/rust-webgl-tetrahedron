@@ -1,14 +1,17 @@
 #![warn(clippy::all)]
 use gltf::mesh::util::{ReadIndices, ReadTexCoords};
-use log::{debug, Level};
+use log::{info, Level};
 use nalgebra as na;
 use std::rc::Rc;
+use std::sync;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
-use web_sys::{HtmlCanvasElement, WebGlRenderingContext, WebGlUniformLocation};
+use web_sys::{HtmlCanvasElement, ImageData, WebGlRenderingContext, WebGlUniformLocation};
 
 mod gl_abstraction;
 pub use gl_abstraction::{GlBuffer, Program, Shader, Texture2D, WebGl};
+
+static LOGGING: sync::Once = sync::Once::new();
 
 // TODO: either generate all of this, or use a macro to help a bit
 struct AttribLocs {
@@ -42,6 +45,7 @@ impl AttribLocs {
 struct UniformLocs {
     model_view_projection: WebGlUniformLocation,
     normal_matrix: WebGlUniformLocation,
+    sampler: WebGlUniformLocation,
 }
 
 impl UniformLocs {
@@ -53,6 +57,9 @@ impl UniformLocs {
             normal_matrix: gl
                 .get_uniform_location(program, "u_normal_matrix")
                 .ok_or_else(|| "normal_matrix uniform doesn't exist")?,
+            sampler: gl
+                .get_uniform_location(program, "u_sampler")
+                .ok_or_else(|| "sampler uniform doesn't exist")?,
         })
     }
 }
@@ -82,6 +89,7 @@ pub struct Tetra {
     normal_buffer: Option<GlBuffer<f32>>,
     tex_coord_buffer: Option<GlBuffer<f32>>,
     element_buffer: Option<GlBuffer<u16>>,
+    texture: Option<Texture2D>,
 }
 
 #[wasm_bindgen]
@@ -89,7 +97,11 @@ impl Tetra {
     #[wasm_bindgen(constructor)]
     pub fn new(canvas: &HtmlCanvasElement) -> Result<Tetra, JsValue> {
         console_error_panic_hook::set_once();
-        console_log::init_with_level(Level::Debug).unwrap();
+        LOGGING.call_once(|| {
+            let level = Level::Info;
+            console_log::init_with_level(level).unwrap();
+            info!("rust logging started with level {:?}", level);
+        });
         let gl = canvas
             .get_context("webgl")
             .expect("invalid web context")
@@ -107,6 +119,7 @@ impl Tetra {
             normal_buffer: None,
             tex_coord_buffer: None,
             element_buffer: None,
+            texture: None,
         })
     }
 
@@ -185,6 +198,16 @@ impl Tetra {
                 }
             }
         }
+        let image = &images[0];
+        let mut data = image.pixels.clone();
+        self.texture = Some(Texture2D::new(
+            &self.gl,
+            &ImageData::new_with_u8_clamped_array_and_sh(
+                wasm_bindgen::Clamped(&mut data),
+                image.width,
+                image.height,
+            )?,
+        )?);
         Ok(self)
     }
 
@@ -213,6 +236,16 @@ impl Tetra {
             .tex_coord_buffer
             .as_ref()
             .expect("tex coord buffer must exist to render texture");
+
+        let texture = self
+            .texture
+            .as_ref()
+            .expect("texture must have been loaded");
+
+        self.gl.active_texture(WebGlRenderingContext::TEXTURE0);
+        texture.bind();
+        self.gl
+            .uniform1i(Some(&program_info.uniform_locs.sampler), 0);
 
         self.gl.clear_color(0.0, 0.0, 0.0, 1.0);
         self.gl.clear_depth(1.0);
@@ -246,7 +279,7 @@ impl Tetra {
         );
         self.gl
             .enable_vertex_attrib_array(program_info.attrib_locs.normal);
-        
+
         tex_coord_buffer.bind();
         self.gl.vertex_attrib_pointer_with_i32(
             program_info.attrib_locs.tex_coord,
@@ -259,11 +292,13 @@ impl Tetra {
         self.gl
             .enable_vertex_attrib_array(program_info.attrib_locs.tex_coord);
 
-        let model_rot = na::UnitQuaternion::from_scaled_axis(na::Vector3::y() * timestamp * 0.001);
+        let model_rot = na::UnitQuaternion::from_scaled_axis(
+            na::Vector3::new(1.0, 0.8, 0.0) * timestamp * 0.001,
+        );
         let model: na::Isometry3<f32> =
             na::Isometry3::from_parts(na::Translation3::identity(), model_rot);
         let view: na::Isometry3<f32> =
-            na::Isometry3::new(na::Vector3::new(0.0, 0.0, -5.0), na::zero());
+            na::Isometry3::new(na::Vector3::new(0.0, 0.0, -2.0), na::zero());
         let (width, height) = self.viewport_size;
         let projection: na::Perspective3<f32> = na::Perspective3::new(
             width as f32 / height as f32,
