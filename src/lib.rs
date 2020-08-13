@@ -4,13 +4,12 @@ use std::mem;
 use std::rc::Rc;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
-use web_sys::{
-    HtmlCanvasElement, HtmlImageElement, WebGlRenderingContext, WebGlUniformLocation,
-};
+use web_sys::{HtmlCanvasElement, HtmlImageElement, WebGlRenderingContext, WebGlUniformLocation};
 
 mod gl_abstraction;
-pub use gl_abstraction::{GlBuffer, Program, Shader, WebGl, Texture2D};
+pub use gl_abstraction::{GlBuffer, Program, Shader, Texture2D, WebGl};
 
+// TODO: either generate all of this, or use a macro to help a bit
 struct AttribLocs {
     position: u32,
     tex_coord: u32,
@@ -41,8 +40,12 @@ struct UniformLocs {
 impl UniformLocs {
     fn new(gl: &WebGl, program: &Program) -> Result<UniformLocs, JsValue> {
         Ok(UniformLocs {
-            model_view_projection: gl.get_uniform_location(program, "u_model_view_projection").ok_or_else(|| "model_view_projection uniform doesn't exist")?,
-            sampler: gl.get_uniform_location(program, "u_sampler").ok_or_else(|| "model_view_projection uniform doesn't exist")?,
+            model_view_projection: gl
+                .get_uniform_location(program, "u_model_view_projection")
+                .ok_or_else(|| "model_view_projection uniform doesn't exist")?,
+            sampler: gl
+                .get_uniform_location(program, "u_sampler")
+                .ok_or_else(|| "model_view_projection uniform doesn't exist")?,
         })
     }
 }
@@ -148,12 +151,16 @@ impl Tetra {
             .as_ref()
             .expect("program has to have been created to draw");
         program.set_used();
-        let program_info = self.program_info.as_ref().expect("program info should've been created");
+        let program_info = self
+            .program_info
+            .as_ref()
+            .expect("program info should've been created");
 
         let texture = self.texture.as_ref().expect("texture must have been set");
         self.gl.active_texture(WebGlRenderingContext::TEXTURE0);
         texture.bind();
-        self.gl.uniform1i(Some(&program_info.uniform_locs.sampler), 0);
+        self.gl
+            .uniform1i(Some(&program_info.uniform_locs.sampler), 0);
 
         let vert_buffer = self
             .vert_buffer
@@ -175,7 +182,11 @@ impl Tetra {
         );
 
         let mvp = projection.as_matrix() * (view * model).to_homogeneous();
-        self.gl.uniform_matrix4fv_with_f32_array(Some(&program_info.uniform_locs.model_view_projection), false, mvp.as_slice());
+        self.gl.uniform_matrix4fv_with_f32_array(
+            Some(&program_info.uniform_locs.model_view_projection),
+            false,
+            mvp.as_slice(),
+        );
 
         vert_buffer.bind();
 
