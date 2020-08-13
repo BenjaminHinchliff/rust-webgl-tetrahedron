@@ -1,6 +1,6 @@
 #![warn(clippy::all)]
-use gltf::mesh::util::ReadIndices;
-use log::Level;
+use gltf::mesh::util::{ReadIndices, ReadTexCoords};
+use log::{debug, Level};
 use nalgebra as na;
 use std::rc::Rc;
 use wasm_bindgen::prelude::*;
@@ -14,6 +14,7 @@ pub use gl_abstraction::{GlBuffer, Program, Shader, Texture2D, WebGl};
 struct AttribLocs {
     position: u32,
     normal: u32,
+    tex_coord: u32,
 }
 
 impl AttribLocs {
@@ -26,9 +27,14 @@ impl AttribLocs {
         if normal == -1 {
             return Err("normal attribute doesn't exist".into());
         }
+        let tex_coord = gl.get_attrib_location(program, "a_tex_coord");
+        if tex_coord == -1 {
+            return Err("tex_coord attribute doesn't exist".into());
+        }
         Ok(AttribLocs {
             position: position as u32,
             normal: normal as u32,
+            tex_coord: tex_coord as u32,
         })
     }
 }
@@ -74,6 +80,7 @@ pub struct Tetra {
     program_info: Option<ProgramInfo>,
     vert_buffer: Option<GlBuffer<f32>>,
     normal_buffer: Option<GlBuffer<f32>>,
+    tex_coord_buffer: Option<GlBuffer<f32>>,
     element_buffer: Option<GlBuffer<u16>>,
 }
 
@@ -98,6 +105,7 @@ impl Tetra {
             program_info: None,
             vert_buffer: None,
             normal_buffer: None,
+            tex_coord_buffer: None,
             element_buffer: None,
         })
     }
@@ -125,51 +133,58 @@ impl Tetra {
     }
 
     pub fn load_gltf(mut self, data: &[u8]) -> Result<Tetra, JsValue> {
-        let mut vertices: Vec<f32> = Vec::new();
-        let mut indices: Option<Vec<u16>> = None;
-        let mut normals: Vec<f32> = Vec::new();
-        let (gltf, buffers, _) = gltf::import_slice(data).unwrap();
+        let (gltf, buffers, images) = gltf::import_slice(data).unwrap();
         for mesh in gltf.meshes() {
             for primitive in mesh.primitives() {
                 let reader = primitive.reader(|buffer| Some(&buffers[buffer.index()]));
                 if let Some(iter) = reader.read_positions() {
+                    let mut vertices: Vec<f32> = Vec::new();
                     for vertex_position in iter {
                         vertices.extend_from_slice(&vertex_position);
                     }
+                    self.vert_buffer = Some(GlBuffer::new(
+                        &self.gl,
+                        WebGlRenderingContext::ARRAY_BUFFER,
+                        vertices,
+                    )?);
+                }
+                if let Some(tex_coord_iter_enum) = reader.read_tex_coords(0) {
+                    if let ReadTexCoords::F32(tex_coord_iter) = tex_coord_iter_enum {
+                        let mut tex_coords: Vec<f32> = Vec::new();
+                        for tex_coord in tex_coord_iter {
+                            tex_coords.extend_from_slice(&tex_coord);
+                        }
+                        self.tex_coord_buffer = Some(GlBuffer::new(
+                            &self.gl,
+                            WebGlRenderingContext::ARRAY_BUFFER,
+                            tex_coords,
+                        )?);
+                    }
+                }
+                if let Some(normals_iter) = reader.read_normals() {
+                    let mut normals: Vec<f32> = Vec::new();
+                    for normal in normals_iter {
+                        normals.extend_from_slice(&normal);
+                    }
+                    self.normal_buffer = Some(GlBuffer::new(
+                        &self.gl,
+                        WebGlRenderingContext::ARRAY_BUFFER,
+                        normals,
+                    )?);
                 }
                 if let Some(indices_type) = reader.read_indices() {
                     let mut indicies_temp: Vec<u16> = Vec::new();
                     if let ReadIndices::U16(indices_buffer) = indices_type {
                         indicies_temp.extend(indices_buffer);
                     }
-                    indices = Some(indicies_temp);
-                }
-                if let Some(normals_iter) = reader.read_normals() {
-                    for normal in normals_iter {
-                        normals.extend_from_slice(&normal);
-                    }
+                    self.element_buffer = Some(GlBuffer::new(
+                        &self.gl,
+                        WebGlRenderingContext::ELEMENT_ARRAY_BUFFER,
+                        indicies_temp,
+                    )?);
                 }
             }
         }
-        self.vert_buffer = Some(GlBuffer::new(
-            &self.gl,
-            WebGlRenderingContext::ARRAY_BUFFER,
-            vertices,
-        )?);
-        self.element_buffer = if let Some(indices) = indices {
-            Some(GlBuffer::new(
-                &self.gl,
-                WebGlRenderingContext::ELEMENT_ARRAY_BUFFER,
-                indices,
-            )?)
-        } else {
-            None
-        };
-        self.normal_buffer = Some(GlBuffer::new(
-            &self.gl,
-            WebGlRenderingContext::ARRAY_BUFFER,
-            normals,
-        )?);
         Ok(self)
     }
 
@@ -194,12 +209,19 @@ impl Tetra {
             .as_ref()
             .expect("normal buffer must exist to calculate lighting");
 
+        let tex_coord_buffer = self
+            .tex_coord_buffer
+            .as_ref()
+            .expect("tex coord buffer must exist to render texture");
+
         self.gl.clear_color(0.0, 0.0, 0.0, 1.0);
         self.gl.clear_depth(1.0);
         self.gl.enable(WebGlRenderingContext::DEPTH_TEST);
         self.gl.depth_func(WebGlRenderingContext::LEQUAL);
 
-        self.gl.clear(WebGlRenderingContext::COLOR_BUFFER_BIT | WebGlRenderingContext::DEPTH_BUFFER_BIT);
+        self.gl.clear(
+            WebGlRenderingContext::COLOR_BUFFER_BIT | WebGlRenderingContext::DEPTH_BUFFER_BIT,
+        );
 
         vert_buffer.bind();
         self.gl.vertex_attrib_pointer_with_i32(
@@ -224,6 +246,18 @@ impl Tetra {
         );
         self.gl
             .enable_vertex_attrib_array(program_info.attrib_locs.normal);
+        
+        tex_coord_buffer.bind();
+        self.gl.vertex_attrib_pointer_with_i32(
+            program_info.attrib_locs.tex_coord,
+            2,
+            WebGlRenderingContext::FLOAT,
+            false,
+            0,
+            0,
+        );
+        self.gl
+            .enable_vertex_attrib_array(program_info.attrib_locs.tex_coord);
 
         let model_rot = na::UnitQuaternion::from_scaled_axis(na::Vector3::y() * timestamp * 0.001);
         let model: na::Isometry3<f32> =

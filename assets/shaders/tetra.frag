@@ -1,3 +1,4 @@
+varying highp vec2 v_tex_coord;
 varying highp vec3 v_lighting;
 
 void main() {
