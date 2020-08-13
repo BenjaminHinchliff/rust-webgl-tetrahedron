@@ -5,6 +5,7 @@ use std::rc::Rc;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::{HtmlCanvasElement, HtmlImageElement, WebGlRenderingContext, WebGlUniformLocation};
+use log::{debug, Level};
 
 mod gl_abstraction;
 pub use gl_abstraction::{GlBuffer, Program, Shader, Texture2D, WebGl};
@@ -81,6 +82,7 @@ impl Tetra {
     #[wasm_bindgen(constructor)]
     pub fn new(canvas: &HtmlCanvasElement) -> Result<Tetra, JsValue> {
         console_error_panic_hook::set_once();
+        console_log::init_with_level(Level::Debug).unwrap();
         let gl = canvas
             .get_context("webgl")
             .expect("invalid web context")
@@ -119,6 +121,25 @@ impl Tetra {
         self.shaders.clear();
         self.program_info = Some(ProgramInfo::new(&self.gl, &program)?);
         self.program = Some(program);
+        Ok(self)
+    }
+
+    pub fn load_gltf(self, data: &[u8]) -> Result<Tetra, JsValue> {
+        let mut vertices: Vec<f32> = Vec::new();
+        let (gltf, buffers, _) = gltf::import_slice(data).unwrap();
+        for mesh in gltf.meshes() {
+            debug!("Mesh #{}", mesh.index());
+            for primitive in mesh.primitives() {
+                debug!("- Primitive #{} Mode {:?}", primitive.index(), primitive.mode());
+                let reader = primitive.reader(|buffer| Some(&buffers[buffer.index()]));
+                if let Some(iter) = reader.read_positions() {
+                    for vertex_position in iter {
+                        vertices.extend_from_slice(&vertex_position);
+                    }
+                }
+            }
+        }
+        debug!("{:?}", vertices);
         Ok(self)
     }
 
