@@ -151,6 +151,7 @@ impl Tetra {
             for primitive in mesh.primitives() {
                 let reader = primitive.reader(|buffer| Some(&buffers[buffer.index()]));
                 if let Some(iter) = reader.read_positions() {
+                    info!("loading vertices...");
                     let mut vertices: Vec<f32> = Vec::new();
                     for vertex_position in iter {
                         vertices.extend_from_slice(&vertex_position);
@@ -160,9 +161,11 @@ impl Tetra {
                         WebGlRenderingContext::ARRAY_BUFFER,
                         vertices,
                     )?);
+                    info!("vertices loaded!");
                 }
                 if let Some(tex_coord_iter_enum) = reader.read_tex_coords(0) {
                     if let ReadTexCoords::F32(tex_coord_iter) = tex_coord_iter_enum {
+                        info!("loading texture coords for texture 0...");
                         let mut tex_coords: Vec<f32> = Vec::new();
                         for tex_coord in tex_coord_iter {
                             tex_coords.extend_from_slice(&tex_coord);
@@ -172,9 +175,11 @@ impl Tetra {
                             WebGlRenderingContext::ARRAY_BUFFER,
                             tex_coords,
                         )?);
+                        info!("loaded texture coords for texture 0!");
                     }
                 }
                 if let Some(normals_iter) = reader.read_normals() {
+                    info!("loading normals...");
                     let mut normals: Vec<f32> = Vec::new();
                     for normal in normals_iter {
                         normals.extend_from_slice(&normal);
@@ -184,8 +189,10 @@ impl Tetra {
                         WebGlRenderingContext::ARRAY_BUFFER,
                         normals,
                     )?);
+                    info!("normals loaded!");
                 }
                 if let Some(indices_type) = reader.read_indices() {
+                    info!("loading indices...");
                     let mut indicies_temp: Vec<u16> = Vec::new();
                     if let ReadIndices::U16(indices_buffer) = indices_type {
                         indicies_temp.extend(indices_buffer);
@@ -195,19 +202,24 @@ impl Tetra {
                         WebGlRenderingContext::ELEMENT_ARRAY_BUFFER,
                         indicies_temp,
                     )?);
+                    info!("indicies loaded!");
                 }
             }
         }
-        let image = &images[0];
-        let mut data = image.pixels.clone();
-        self.texture = Some(Texture2D::new(
-            &self.gl,
-            &ImageData::new_with_u8_clamped_array_and_sh(
-                wasm_bindgen::Clamped(&mut data),
-                image.width,
-                image.height,
-            )?,
-        )?);
+        if !images.is_empty() {
+            info!("loading image for texture 0...");
+            let image = &images[0];
+            let mut data = image.pixels.clone();
+            self.texture = Some(Texture2D::new(
+                &self.gl,
+                &ImageData::new_with_u8_clamped_array_and_sh(
+                    wasm_bindgen::Clamped(&mut data),
+                    image.width,
+                    image.height,
+                )?,
+            )?);
+            info!("loaded image for texture 0!");
+        }
         Ok(self)
     }
 
