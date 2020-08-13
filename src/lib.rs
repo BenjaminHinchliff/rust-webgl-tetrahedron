@@ -1,6 +1,6 @@
 #![warn(clippy::all)]
 use gltf::mesh::util::ReadIndices;
-use log::{debug, Level};
+use log::Level;
 use nalgebra as na;
 use std::rc::Rc;
 use wasm_bindgen::prelude::*;
