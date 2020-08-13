@@ -7,6 +7,7 @@ use super::WebGl;
 /// a generic type for an opengl buffer that contains both the buffer itself and also owns the
 /// array to the underlying data. Currently the array is immutable so the buffer can't be
 /// invalidated, but this could be changed with an appropriate setter
+#[derive(Debug)]
 pub struct GlBuffer<T> {
     gl: WebGl,
     type_: u32,

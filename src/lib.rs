@@ -1,11 +1,11 @@
 #![warn(clippy::all)]
+use gltf::mesh::util::ReadIndices;
+use log::{debug, Level};
 use nalgebra as na;
-use std::mem;
 use std::rc::Rc;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
-use web_sys::{HtmlCanvasElement, HtmlImageElement, WebGlRenderingContext, WebGlUniformLocation};
-use log::{debug, Level};
+use web_sys::{HtmlCanvasElement, WebGlRenderingContext, WebGlUniformLocation};
 
 mod gl_abstraction;
 pub use gl_abstraction::{GlBuffer, Program, Shader, Texture2D, WebGl};
@@ -13,7 +13,7 @@ pub use gl_abstraction::{GlBuffer, Program, Shader, Texture2D, WebGl};
 // TODO: either generate all of this, or use a macro to help a bit
 struct AttribLocs {
     position: u32,
-    tex_coord: u32,
+    normal: u32,
 }
 
 impl AttribLocs {
@@ -22,20 +22,20 @@ impl AttribLocs {
         if position == -1 {
             return Err("position attribute doesn't exist".into());
         }
-        let tex_coord = gl.get_attrib_location(program, "a_tex_coord");
-        if tex_coord == -1 {
-            return Err("tex_coord attribute doesn't exist".into());
+        let normal = gl.get_attrib_location(program, "a_normal");
+        if normal == -1 {
+            return Err("normal attribute doesn't exist".into());
         }
         Ok(AttribLocs {
             position: position as u32,
-            tex_coord: tex_coord as u32,
+            normal: normal as u32,
         })
     }
 }
 
 struct UniformLocs {
     model_view_projection: WebGlUniformLocation,
-    sampler: WebGlUniformLocation,
+    normal_matrix: WebGlUniformLocation,
 }
 
 impl UniformLocs {
@@ -44,9 +44,9 @@ impl UniformLocs {
             model_view_projection: gl
                 .get_uniform_location(program, "u_model_view_projection")
                 .ok_or_else(|| "model_view_projection uniform doesn't exist")?,
-            sampler: gl
-                .get_uniform_location(program, "u_sampler")
-                .ok_or_else(|| "model_view_projection uniform doesn't exist")?,
+            normal_matrix: gl
+                .get_uniform_location(program, "u_normal_matrix")
+                .ok_or_else(|| "normal_matrix uniform doesn't exist")?,
         })
     }
 }
@@ -73,8 +73,8 @@ pub struct Tetra {
     program: Option<Program>,
     program_info: Option<ProgramInfo>,
     vert_buffer: Option<GlBuffer<f32>>,
+    normal_buffer: Option<GlBuffer<f32>>,
     element_buffer: Option<GlBuffer<u16>>,
-    texture: Option<Texture2D>,
 }
 
 #[wasm_bindgen]
@@ -97,8 +97,8 @@ impl Tetra {
             program: None,
             program_info: None,
             vert_buffer: None,
+            normal_buffer: None,
             element_buffer: None,
-            texture: None,
         })
     }
 
@@ -124,49 +124,56 @@ impl Tetra {
         Ok(self)
     }
 
-    pub fn load_gltf(self, data: &[u8]) -> Result<Tetra, JsValue> {
+    pub fn load_gltf(mut self, data: &[u8]) -> Result<Tetra, JsValue> {
         let mut vertices: Vec<f32> = Vec::new();
+        let mut indices: Option<Vec<u16>> = None;
+        let mut normals: Vec<f32> = Vec::new();
         let (gltf, buffers, _) = gltf::import_slice(data).unwrap();
         for mesh in gltf.meshes() {
-            debug!("Mesh #{}", mesh.index());
             for primitive in mesh.primitives() {
-                debug!("- Primitive #{} Mode {:?}", primitive.index(), primitive.mode());
                 let reader = primitive.reader(|buffer| Some(&buffers[buffer.index()]));
                 if let Some(iter) = reader.read_positions() {
                     for vertex_position in iter {
                         vertices.extend_from_slice(&vertex_position);
                     }
                 }
+                if let Some(indices_type) = reader.read_indices() {
+                    let mut indicies_temp: Vec<u16> = Vec::new();
+                    if let ReadIndices::U16(indices_buffer) = indices_type {
+                        indicies_temp.extend(indices_buffer);
+                    }
+                    indices = Some(indicies_temp);
+                }
+                if let Some(normals_iter) = reader.read_normals() {
+                    for normal in normals_iter {
+                        normals.extend_from_slice(&normal);
+                    }
+                }
             }
         }
-        debug!("{:?}", vertices);
-        Ok(self)
-    }
-
-    pub fn add_vertices(mut self, verts: Vec<f32>) -> Result<Tetra, JsValue> {
         self.vert_buffer = Some(GlBuffer::new(
             &self.gl,
             WebGlRenderingContext::ARRAY_BUFFER,
-            verts,
+            vertices,
         )?);
-        Ok(self)
-    }
-
-    pub fn add_indices(mut self, indices: Vec<u16>) -> Result<Tetra, JsValue> {
-        self.element_buffer = Some(GlBuffer::new(
+        self.element_buffer = if let Some(indices) = indices {
+            Some(GlBuffer::new(
+                &self.gl,
+                WebGlRenderingContext::ELEMENT_ARRAY_BUFFER,
+                indices,
+            )?)
+        } else {
+            None
+        };
+        self.normal_buffer = Some(GlBuffer::new(
             &self.gl,
-            WebGlRenderingContext::ELEMENT_ARRAY_BUFFER,
-            indices,
+            WebGlRenderingContext::ARRAY_BUFFER,
+            normals,
         )?);
         Ok(self)
     }
 
-    pub fn set_texture(mut self, image: HtmlImageElement) -> Result<Tetra, JsValue> {
-        self.texture = Some(Texture2D::new(&self.gl, &image)?);
-        Ok(self)
-    }
-
-    pub fn draw(&mut self) {
+    pub fn draw(&mut self, timestamp: f32) {
         let program = self
             .program
             .as_ref()
@@ -177,23 +184,52 @@ impl Tetra {
             .as_ref()
             .expect("program info should've been created");
 
-        let texture = self.texture.as_ref().expect("texture must have been set");
-        self.gl.active_texture(WebGlRenderingContext::TEXTURE0);
-        texture.bind();
-        self.gl
-            .uniform1i(Some(&program_info.uniform_locs.sampler), 0);
-
         let vert_buffer = self
             .vert_buffer
             .as_ref()
             .expect("vertex buffer must be created to draw");
 
-        let model_rot =
-            na::UnitQuaternion::from_scaled_axis(na::Vector3::x() * -std::f32::consts::FRAC_PI_4);
+        let normal_buffer = self
+            .normal_buffer
+            .as_ref()
+            .expect("normal buffer must exist to calculate lighting");
+
+        self.gl.clear_color(0.0, 0.0, 0.0, 1.0);
+        self.gl.clear_depth(1.0);
+        self.gl.enable(WebGlRenderingContext::DEPTH_TEST);
+        self.gl.depth_func(WebGlRenderingContext::LEQUAL);
+
+        self.gl.clear(WebGlRenderingContext::COLOR_BUFFER_BIT | WebGlRenderingContext::DEPTH_BUFFER_BIT);
+
+        vert_buffer.bind();
+        self.gl.vertex_attrib_pointer_with_i32(
+            program_info.attrib_locs.position,
+            3,
+            WebGlRenderingContext::FLOAT,
+            false,
+            0,
+            0,
+        );
+        self.gl
+            .enable_vertex_attrib_array(program_info.attrib_locs.position);
+
+        normal_buffer.bind();
+        self.gl.vertex_attrib_pointer_with_i32(
+            program_info.attrib_locs.normal,
+            3,
+            WebGlRenderingContext::FLOAT,
+            false,
+            0,
+            0,
+        );
+        self.gl
+            .enable_vertex_attrib_array(program_info.attrib_locs.normal);
+
+        let model_rot = na::UnitQuaternion::from_scaled_axis(na::Vector3::y() * timestamp * 0.001);
         let model: na::Isometry3<f32> =
             na::Isometry3::from_parts(na::Translation3::identity(), model_rot);
         let view: na::Isometry3<f32> =
-            na::Isometry3::new(na::Vector3::new(0.0, 0.0, -4.0), na::zero());
+            na::Isometry3::new(na::Vector3::new(0.0, 0.0, -5.0), na::zero());
         let (width, height) = self.viewport_size;
         let projection: na::Perspective3<f32> = na::Perspective3::new(
             width as f32 / height as f32,
@@ -202,37 +238,20 @@ impl Tetra {
             100.0,
         );
 
-        let mvp = projection.as_matrix() * (view * model).to_homogeneous();
+        let matrix_view = (view * model).to_homogeneous();
+        let mvp = projection.as_matrix() * matrix_view;
         self.gl.uniform_matrix4fv_with_f32_array(
             Some(&program_info.uniform_locs.model_view_projection),
             false,
             mvp.as_slice(),
         );
 
-        vert_buffer.bind();
-
-        self.gl.vertex_attrib_pointer_with_i32(
-            program_info.attrib_locs.position,
-            3,
-            WebGlRenderingContext::FLOAT,
+        let normal_matrix = matrix_view.clone().try_inverse().unwrap().transpose();
+        self.gl.uniform_matrix4fv_with_f32_array(
+            Some(&program_info.uniform_locs.normal_matrix),
             false,
-            5 * mem::size_of::<f32>() as i32,
-            0,
+            normal_matrix.as_slice(),
         );
-        self.gl.enable_vertex_attrib_array(0);
-
-        self.gl.vertex_attrib_pointer_with_i32(
-            program_info.attrib_locs.tex_coord,
-            2,
-            WebGlRenderingContext::FLOAT,
-            false,
-            5 * mem::size_of::<f32>() as i32,
-            3 * mem::size_of::<f32>() as i32,
-        );
-        self.gl.enable_vertex_attrib_array(1);
-
-        self.gl.clear_color(0.0, 0.0, 0.0, 1.0);
-        self.gl.clear(WebGlRenderingContext::COLOR_BUFFER_BIT);
 
         if let Some(ref element_buffer) = self.element_buffer {
             element_buffer.bind();
@@ -251,8 +270,8 @@ impl Tetra {
             );
         }
 
+        normal_buffer.unbind();
         vert_buffer.unbind();
-        texture.unbind();
         program.set_unused();
     }
 }
