@@ -5,11 +5,61 @@ use std::rc::Rc;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::{
-    HtmlCanvasElement, HtmlImageElement, WebGlRenderingContext, WebGlTexture, WebGlUniformLocation,
+    HtmlCanvasElement, HtmlImageElement, WebGlRenderingContext, WebGlUniformLocation,
 };
 
 mod gl_abstraction;
-pub use gl_abstraction::{GlBuffer, Program, Shader, WebGl};
+pub use gl_abstraction::{GlBuffer, Program, Shader, WebGl, Texture2D};
+
+struct AttribLocs {
+    position: u32,
+    tex_coord: u32,
+}
+
+impl AttribLocs {
+    fn new(gl: &WebGl, program: &Program) -> Result<AttribLocs, JsValue> {
+        let position = gl.get_attrib_location(program, "a_position");
+        if position == -1 {
+            return Err("position attribute doesn't exist".into());
+        }
+        let tex_coord = gl.get_attrib_location(program, "a_tex_coord");
+        if tex_coord == -1 {
+            return Err("tex_coord attribute doesn't exist".into());
+        }
+        Ok(AttribLocs {
+            position: position as u32,
+            tex_coord: tex_coord as u32,
+        })
+    }
+}
+
+struct UniformLocs {
+    model_view_projection: WebGlUniformLocation,
+    sampler: WebGlUniformLocation,
+}
+
+impl UniformLocs {
+    fn new(gl: &WebGl, program: &Program) -> Result<UniformLocs, JsValue> {
+        Ok(UniformLocs {
+            model_view_projection: gl.get_uniform_location(program, "u_model_view_projection").ok_or_else(|| "model_view_projection uniform doesn't exist")?,
+            sampler: gl.get_uniform_location(program, "u_sampler").ok_or_else(|| "model_view_projection uniform doesn't exist")?,
+        })
+    }
+}
+
+struct ProgramInfo {
+    attrib_locs: AttribLocs,
+    uniform_locs: UniformLocs,
+}
+
+impl ProgramInfo {
+    fn new(gl: &WebGl, program: &Program) -> Result<ProgramInfo, JsValue> {
+        Ok(ProgramInfo {
+            attrib_locs: AttribLocs::new(gl, program)?,
+            uniform_locs: UniformLocs::new(gl, program)?,
+        })
+    }
+}
 
 #[wasm_bindgen]
 pub struct Tetra {
@@ -17,10 +67,10 @@ pub struct Tetra {
     viewport_size: (u32, u32),
     shaders: Vec<Shader>,
     program: Option<Program>,
+    program_info: Option<ProgramInfo>,
     vert_buffer: Option<GlBuffer<f32>>,
     element_buffer: Option<GlBuffer<u16>>,
-    mvp_loc: Option<WebGlUniformLocation>,
-    texture: Option<WebGlTexture>,
+    texture: Option<Texture2D>,
 }
 
 #[wasm_bindgen]
@@ -40,9 +90,9 @@ impl Tetra {
             viewport_size: (width, height),
             shaders: Vec::new(),
             program: None,
+            program_info: None,
             vert_buffer: None,
             element_buffer: None,
-            mvp_loc: None,
             texture: None,
         })
     }
@@ -64,9 +114,7 @@ impl Tetra {
     pub fn link_program(mut self) -> Result<Tetra, JsValue> {
         let program = Program::new(&self.gl, &self.shaders)?;
         self.shaders.clear();
-        self.mvp_loc = self
-            .gl
-            .get_uniform_location(&program, "model_view_projection");
+        self.program_info = Some(ProgramInfo::new(&self.gl, &program)?);
         self.program = Some(program);
         Ok(self)
     }
@@ -89,29 +137,8 @@ impl Tetra {
         Ok(self)
     }
 
-    pub fn set_texture(mut self, data: HtmlImageElement) -> Result<Tetra, JsValue> {
-        let texture = self
-            .gl
-            .create_texture()
-            .ok_or_else(|| "unable to create texture")?;
-        self.gl
-            .bind_texture(WebGlRenderingContext::TEXTURE_2D, Some(&texture));
-
-        self.gl.tex_image_2d_with_u32_and_u32_and_image(
-            WebGlRenderingContext::TEXTURE_2D,
-            0,
-            WebGlRenderingContext::RGBA as i32,
-            WebGlRenderingContext::RGBA,
-            WebGlRenderingContext::UNSIGNED_BYTE,
-            &data,
-        )?;
-
-        self.gl.generate_mipmap(WebGlRenderingContext::TEXTURE_2D);
-
-        self.gl
-            .bind_texture(WebGlRenderingContext::TEXTURE_2D, None);
-
-        self.texture = Some(texture);
+    pub fn set_texture(mut self, image: HtmlImageElement) -> Result<Tetra, JsValue> {
+        self.texture = Some(Texture2D::new(&self.gl, &image)?);
         Ok(self)
     }
 
@@ -121,16 +148,13 @@ impl Tetra {
             .as_ref()
             .expect("program has to have been created to draw");
         program.set_used();
+        let program_info = self.program_info.as_ref().expect("program info should've been created");
 
-        self.gl.bind_texture(
-            WebGlRenderingContext::TEXTURE_2D,
-            Some(
-                &self
-                    .texture
-                    .as_ref()
-                    .expect("texture must have been set to draw"),
-            ),
-        );
+        let texture = self.texture.as_ref().expect("texture must have been set");
+        self.gl.active_texture(WebGlRenderingContext::TEXTURE0);
+        texture.bind();
+        self.gl.uniform1i(Some(&program_info.uniform_locs.sampler), 0);
+
         let vert_buffer = self
             .vert_buffer
             .as_ref()
@@ -150,18 +174,13 @@ impl Tetra {
             100.0,
         );
 
-        let mvp_loc = self
-            .mvp_loc
-            .as_ref()
-            .expect("model view projection matrix must be defined in vertex shader");
         let mvp = projection.as_matrix() * (view * model).to_homogeneous();
-        self.gl
-            .uniform_matrix4fv_with_f32_array(Some(mvp_loc), false, mvp.as_slice());
+        self.gl.uniform_matrix4fv_with_f32_array(Some(&program_info.uniform_locs.model_view_projection), false, mvp.as_slice());
 
         vert_buffer.bind();
 
         self.gl.vertex_attrib_pointer_with_i32(
-            0,
+            program_info.attrib_locs.position,
             3,
             WebGlRenderingContext::FLOAT,
             false,
@@ -171,7 +190,7 @@ impl Tetra {
         self.gl.enable_vertex_attrib_array(0);
 
         self.gl.vertex_attrib_pointer_with_i32(
-            1,
+            program_info.attrib_locs.tex_coord,
             2,
             WebGlRenderingContext::FLOAT,
             false,
@@ -201,12 +220,7 @@ impl Tetra {
         }
 
         vert_buffer.unbind();
+        texture.unbind();
         program.set_unused();
-    }
-}
-
-impl Drop for Tetra {
-    fn drop(&mut self) {
-        self.gl.delete_texture(self.texture.as_ref());
     }
 }

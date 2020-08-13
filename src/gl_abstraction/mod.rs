@@ -14,3 +14,6 @@ pub use shader::Shader;
 
 mod program;
 pub use program::Program;
+
+mod texture;
+pub use texture::Texture2D;
