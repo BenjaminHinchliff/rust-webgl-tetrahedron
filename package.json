@@ -1,4 +1,10 @@
 {
+  "name": "rust-webgl-tetrahedron",
+  "version": "0.1.0",
+  "authors": ["Benjamin Hinchliff <benjamin.hinchliff@gmail.com>"],
+  "description": "it's rendering with WebGL from rust compiled to WebAssembly",
+  "repository": "https://github.com/BenjaminHinchliff/rust-wasm-webgl",
+  "license": "GPLv3",
   "scripts": {
     "build": "webpack --mode production",
     "serve": "webpack-dev-server",
