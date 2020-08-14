@@ -16,12 +16,14 @@ async function main() {
 
   const wasmModule = await wasmModulePromise;
   const {Tetra} = wasmModule;
+  const fetchPromises = [vertexPath, fragPath].map(async (path) => {
+    return await (await fetch(path)).text();
+  });
+  fetchPromises.push((async () => {
+    return new Uint8Array(await (await fetch(modelPath)).arrayBuffer());
+  })());
   // get shader sources
-  const [vertexSource, fragSource] = await Promise.all(
-      [vertexPath, fragPath].map(async (path) => {
-        return await (await fetch(path)).text();
-      }));
-  const model = new Uint8Array(await (await fetch(modelPath)).arrayBuffer());
+  const [vertexSource, fragSource, model] = await Promise.all(fetchPromises);
   const tetra = new Tetra(canvas)
       .add_vert_shader(vertexSource)
       .add_frag_shader(fragSource)
