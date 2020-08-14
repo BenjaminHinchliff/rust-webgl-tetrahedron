@@ -1,0 +1,12 @@
+html, body {
+    margin: 0;
+}
+
+body {
+    overflow: hidden;
+}
+
+#webgl {
+    width: 100%;
+    height: 100%;
+}

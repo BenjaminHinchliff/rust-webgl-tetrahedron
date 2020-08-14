@@ -123,6 +123,12 @@ impl Tetra {
         })
     }
 
+    pub fn refresh_viewport(&mut self, canvas: &HtmlCanvasElement) {
+        let (width, height) = (canvas.width(), canvas.height());
+        self.gl.viewport(0, 0, width as i32, height as i32);
+        self.viewport_size = (width, height);
+    }
+
     pub fn add_shader(mut self, shader_type: u32, source: &str) -> Result<Tetra, JsValue> {
         self.shaders
             .push(Shader::new(&self.gl, shader_type, source)?);

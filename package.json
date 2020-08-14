@@ -1,7 +1,9 @@
 {
   "name": "rust-webgl-tetrahedron",
   "version": "0.1.0",
-  "authors": ["Benjamin Hinchliff <benjamin.hinchliff@gmail.com>"],
+  "authors": [
+    "Benjamin Hinchliff <benjamin.hinchliff@gmail.com>"
+  ],
   "description": "it's rendering with WebGL from rust compiled to WebAssembly",
   "repository": "https://github.com/BenjaminHinchliff/rust-wasm-webgl",
   "license": "GPLv3",
@@ -13,11 +15,13 @@
   },
   "devDependencies": {
     "@wasm-tool/wasm-pack-plugin": "1.0.1",
+    "css-loader": "^4.2.1",
     "eslint": "^7.6.0",
     "eslint-config-google": "^0.14.0",
     "file-loader": "^6.0.0",
     "gh-pages": "^3.1.0",
     "html-webpack-plugin": "^3.2.0",
+    "style-loader": "^1.2.1",
     "text-encoding": "^0.7.0",
     "webpack": "^4.29.4",
     "webpack-cli": "^3.1.1",
