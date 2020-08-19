@@ -6,77 +6,15 @@ use std::rc::Rc;
 use std::sync;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
-use web_sys::{HtmlCanvasElement, ImageData, WebGlRenderingContext, WebGlUniformLocation};
+use web_sys::{HtmlCanvasElement, ImageData, WebGlRenderingContext};
 
 mod gl_abstraction;
 pub use gl_abstraction::{GlBuffer, Program, Shader, Texture2D, WebGl};
 
+mod program_info;
+pub use program_info::ProgramInfo;
+
 static LOGGING: sync::Once = sync::Once::new();
-
-// TODO: either generate all of this, or use a macro to help a bit
-struct AttribLocs {
-    position: u32,
-    normal: u32,
-    tex_coord: u32,
-}
-
-impl AttribLocs {
-    fn new(gl: &WebGl, program: &Program) -> Result<AttribLocs, JsValue> {
-        let position = gl.get_attrib_location(program, "a_position");
-        if position == -1 {
-            return Err("position attribute doesn't exist".into());
-        }
-        let normal = gl.get_attrib_location(program, "a_normal");
-        if normal == -1 {
-            return Err("normal attribute doesn't exist".into());
-        }
-        let tex_coord = gl.get_attrib_location(program, "a_tex_coord");
-        if tex_coord == -1 {
-            return Err("tex_coord attribute doesn't exist".into());
-        }
-        Ok(AttribLocs {
-            position: position as u32,
-            normal: normal as u32,
-            tex_coord: tex_coord as u32,
-        })
-    }
-}
-
-struct UniformLocs {
-    model_view_projection: WebGlUniformLocation,
-    normal_matrix: WebGlUniformLocation,
-    sampler: WebGlUniformLocation,
-}
-
-impl UniformLocs {
-    fn new(gl: &WebGl, program: &Program) -> Result<UniformLocs, JsValue> {
-        Ok(UniformLocs {
-            model_view_projection: gl
-                .get_uniform_location(program, "u_model_view_projection")
-                .ok_or_else(|| "model_view_projection uniform doesn't exist")?,
-            normal_matrix: gl
-                .get_uniform_location(program, "u_normal_matrix")
-                .ok_or_else(|| "normal_matrix uniform doesn't exist")?,
-            sampler: gl
-                .get_uniform_location(program, "u_sampler")
-                .ok_or_else(|| "sampler uniform doesn't exist")?,
-        })
-    }
-}
-
-struct ProgramInfo {
-    attrib_locs: AttribLocs,
-    uniform_locs: UniformLocs,
-}
-
-impl ProgramInfo {
-    fn new(gl: &WebGl, program: &Program) -> Result<ProgramInfo, JsValue> {
-        Ok(ProgramInfo {
-            attrib_locs: AttribLocs::new(gl, program)?,
-            uniform_locs: UniformLocs::new(gl, program)?,
-        })
-    }
-}
 
 #[wasm_bindgen]
 pub struct Tetra {
